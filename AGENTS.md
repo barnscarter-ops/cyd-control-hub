@@ -4,13 +4,13 @@ Home-automation dashboard firmware for a 3.5" CYD (Cheap Yellow Display): ESP32-
 
 ## Commands
 
-PlatformIO CLI is not on PATH on this machine; use the full path (or the VS Code PlatformIO toolbar). Board is on `COM22`.
+PlatformIO CLI may not be on PATH; use its installed path or the VS Code PlatformIO toolbar. Detect the board's current serial port before each upload or monitor session; an earlier port is not proof of the current connection.
 
 ```sh
 ~/.platformio/penv/Scripts/pio.exe run                      # build
-~/.platformio/penv/Scripts/pio.exe run -t upload            # flash
-~/.platformio/penv/Scripts/pio.exe device monitor           # serial @ 115200
-~/.platformio/penv/Scripts/python.exe tools/snap.py COM22 out.png [--cmd "screen network"]  # screenshot
+~/.platformio/penv/Scripts/pio.exe run -t upload            # flash after identifying board/port
+~/.platformio/penv/Scripts/pio.exe device monitor           # serial @ 115200, with detected port
+~/.platformio/penv/Scripts/python.exe tools/snap.py <detected-port> out.png [--cmd "screen network"]  # screenshot
 python tools/gen_fonts.py                                   # regenerate include/fonts/*.h (needs Pillow)
 ```
 
@@ -21,7 +21,8 @@ Single env: `cyd35`.
 - `platformio.ini` — board, libs, and **all TFT_eSPI config** via `build_flags`.
 - `src/main.cpp` — glue only: `setup()` inits each module once, `loop()` polls them.
 - `src/gfx.*` — the global `tft`, smooth-font helpers (`text`, `fitText`), and primitives (`card`, `pill`, `button`, `signalBars`, `headerRule`, `logoMark`, `iconBadge`). Every helper takes a `TFT_eSPI&` so it draws to the panel or a sprite.
-- `src/ui.*` — screens (Dashboard, Network, Setup) and navigation. `uiTick()` redraws only what changed.
+- `src/ui.*` — screens (Dashboard, Network, Setup, Fan) and navigation. `uiTick()` redraws only what changed.
+- `src/fan_link.*` — asynchronous HTTP client for the separate server fan controller's versioned API.
 - `src/wifi_link.*` — saved networks, auto-connect state machine, WiFiManager captive portal, NTP.
 - `src/lan_scan.*` — ARP sweep of the subnet to list connected devices.
 - `src/touch_input.*` — XPT2046 calibration and tap polling.
@@ -65,7 +66,7 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `reboot`.
 
 ## Loop rules
 
@@ -76,4 +77,4 @@ Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `too
 
 - `bodmer/TFT_eSPI` — display and touch.
 - `tzapu/WiFiManager` — captive portal.
-- `bblanchon/ArduinoJson` — included for upcoming home-automation payload parsing; not used yet.
+- `bblanchon/ArduinoJson` — parses server fan controller status and control responses.

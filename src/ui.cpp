@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "gfx.h"
+#include "fan_link.h"
 #include "lan_scan.h"
 #include "theme.h"
 #include "wifi_link.h"
@@ -31,6 +32,7 @@ static const int16_t BTN_SCAN_X    = BTN_ADD_X - 8 - BTN_SCAN_W;
 
 static Screen   screen          = Screen::Dashboard;
 static uint32_t seenLinkRev     = 0;
+static uint32_t seenFanRev      = 0;
 static uint32_t nextClockMs     = 0;
 static uint32_t nextStatsMs     = 0;
 static int8_t   pressedCard     = -1;
@@ -169,7 +171,20 @@ struct CardValue {
 
 static CardValue cardValue(size_t i) {
   switch (i) {
-    case 0: return {"OFF", COLOR_SUBTLE, "Idle"};
+    case 0: {
+      uint16_t color = COLOR_AMBER;
+      if (fanLinkState() == FanLinkState::Online && fanLinkSensorValid() && fanLinkFanHealthy() &&
+          fanLinkMode() != "failsafe") color = COLOR_MATRIX;
+      if (fanLinkState() == FanLinkState::Offline || fanLinkState() == FanLinkState::Fault ||
+          fanLinkState() == FanLinkState::Stale ||
+          (fanLinkHasSnapshot() && !fanLinkSensorValid()) ||
+          (fanLinkHasSnapshot() && !fanLinkFanHealthy())) color = COLOR_RED;
+      const String value = fanLinkState() == FanLinkState::Online && fanLinkSensorValid()
+                               ? String(fanLinkTemperatureC(), 1) + " C" : fanLinkLabel();
+      String meta = "Fan controller";
+      if (fanLinkHasSnapshot()) meta = fanLinkMode() + " / " + String(fanLinkDutyPct(), 0) + "%";
+      return {value, color, meta};
+    }
     case 1: return {"CLOSED", COLOR_MATRIX, "Locked"};
     case 2: return {"READY", COLOR_CYAN, "Standby"};
   }
@@ -197,7 +212,7 @@ static void drawCard(size_t i) {
     g.drawFastHLine(ox + 14, oy + 60, CARD_W - 28, COLOR_EDGE);
 
     // Cards that open a screen get a chevron after the meta text.
-    const bool    nav    = i == CARD_SYSTEM;
+    const bool    nav    = i == CARD_SYSTEM || i == 0;
     const int16_t metaR  = CARD_W - 14 - (nav ? 16 : 0);
     if (nav) chevron(g, ox + CARD_W - 18, oy + CARD_H - 22, COLOR_CYAN, fill);
 
@@ -267,8 +282,99 @@ static void releaseCard() {
   if (i == CARD_SYSTEM) {
     const bool needsSetup = linkState() != LinkState::Online && linkPortalActive();
     uiShow(needsSetup ? Screen::Setup : Screen::Network);
+  } else if (i == 0) {
+    uiShow(Screen::Fan);
   } else {
     drawCard(i);
+  }
+}
+
+static float fanTargetC = 35.0f, fanDutyPct = 50.0f;
+
+static uint16_t fanStateColor() {
+  if (fanLinkState() == FanLinkState::Online && fanLinkSensorValid() && fanLinkFanHealthy() &&
+      fanLinkMode() != "failsafe") return COLOR_MATRIX;
+  if (fanLinkState() == FanLinkState::Requesting) return COLOR_CYAN;
+  if (fanLinkState() == FanLinkState::NotConfigured) return COLOR_AMBER;
+  return COLOR_RED;
+}
+
+static void drawFan() {
+  tft.fillScreen(COLOR_BG);
+  subHeader("Server Fan");
+  headerRule(tft);
+
+  const String endpoint = fanLinkHost().length() ? fanLinkHost() : "console: fan host <ip> [port]";
+  text(tft, fitText(tft, endpoint, Font::MonoSm, 260).c_str(), SCREEN_W - MARGIN, 24,
+       Font::MonoSm, COLOR_SUBTLE, COLOR_BG, MR_DATUM);
+  text(tft, fanLinkLabel(), MARGIN, 70, Font::UiLg, fanStateColor(), COLOR_BG, ML_DATUM);
+
+  String activity;
+  if (fanLinkRequestActive()) activity = "sending";
+  if (fanLinkQueuedControls()) {
+    if (activity.length()) activity += " / ";
+    activity += String(fanLinkQueuedControls()) + " queued";
+  }
+  if (!activity.length() && fanLinkHasSnapshot())
+    activity = "age " + String(fanLinkAgeMs(millis()) / 1000) + "s";
+  text(tft, activity.c_str(), SCREEN_W - MARGIN, 70, Font::MonoSm, COLOR_SUBTLE, COLOR_BG,
+       MR_DATUM);
+
+  String detail = fanLinkError();
+  if (!detail.length() && fanLinkFailsafeReason().length())
+    detail = "Failsafe: " + fanLinkFailsafeReason();
+  text(tft, fitText(tft, detail, Font::UiSm, SCREEN_W - 2 * MARGIN).c_str(), MARGIN, 94,
+       Font::UiSm, detail.length() ? COLOR_RED : COLOR_SUBTLE, COLOR_BG, ML_DATUM);
+
+  const int16_t panelY = 108, panelH = 66, panelW = SCREEN_W - 2 * MARGIN;
+  card(tft, MARGIN, panelY, panelW, panelH, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+  const char *labels[4] = {"SENSOR", "MODE", "APPLIED", "FANS"};
+  String values[4] = {
+      fanLinkHasSnapshot() ? (fanLinkSensorValid() ? String(fanLinkTemperatureC(), 1) + " C" : "FAULT") : "-",
+      fanLinkHasSnapshot() ? fanLinkMode() : "-",
+      fanLinkFanCount() ? String(fanLinkFanDutyPct(0), 0) + "%" : "-",
+      fanLinkHasSnapshot() ? (fanLinkFanHealthy() ? "OK" : "FAULT") : "-",
+  };
+  if (fanLinkFanCount() > 1)
+    values[2] = String(fanLinkFanDutyPct(0), 0) + "/" + String(fanLinkFanDutyPct(1), 0) + "%";
+  if (fanLinkFanCount()) {
+    values[3] += " " + String(fanLinkFanRpm(0));
+    if (fanLinkFanCount() > 1) values[3] += "/" + String(fanLinkFanRpm(1));
+  }
+  const int16_t colW = panelW / 4;
+  for (int i = 0; i < 4; i++) {
+    if (i) tft.drawFastVLine(MARGIN + i * colW, panelY + 12, panelH - 24, COLOR_EDGE);
+    const int16_t x = MARGIN + i * colW + 10;
+    text(tft, labels[i], x, panelY + 11, Font::UiSm, COLOR_SUBTLE, COLOR_PANEL);
+    text(tft, fitText(tft, values[i], Font::MonoMd, colW - 18).c_str(), x, panelY + 34,
+         Font::MonoMd, COLOR_TEXT, COLOR_PANEL);
+  }
+
+  text(tft, "AUTO TARGET", 16, 188, Font::UiSm, COLOR_SUBTLE, COLOR_BG);
+  text(tft, "MANUAL DUTY", 260, 188, Font::UiSm, COLOR_SUBTLE, COLOR_BG);
+  button(tft, 16, 205, 42, 36, "-", false);
+  button(tft, 64, 205, 92, 36, (String(fanTargetC, 1) + " C").c_str(), false);
+  button(tft, 162, 205, 42, 36, "+", false);
+  button(tft, 260, 205, 42, 36, "-", false);
+  button(tft, 308, 205, 92, 36, (String(fanDutyPct, 0) + "%").c_str(), false);
+  button(tft, 406, 205, 42, 36, "+", false);
+  button(tft, 16, 250, 188, 36, "Queue Auto", false);
+  button(tft, 260, 250, 188, 36, "Queue Manual", false);
+}
+
+static void tapFan(uint16_t x, uint16_t y) {
+  if (hitBack(x, y)) { uiShow(Screen::Dashboard); return; }
+  if (y >= 205 && y < 241) {
+    if (x >= 16 && x < 58) fanTargetC = max(20.0f, fanTargetC - 1.0f);
+    else if (x >= 162 && x < 204) fanTargetC = min(80.0f, fanTargetC + 1.0f);
+    else if (x >= 260 && x < 302) fanDutyPct = max(0.0f, fanDutyPct - 5.0f);
+    else if (x >= 406 && x < 448) fanDutyPct = min(100.0f, fanDutyPct + 5.0f);
+    else return;
+    drawFan();
+  } else if (y >= 250 && y < 286) {
+    if (x >= 16 && x < 204) fanLinkSetAuto(fanTargetC);
+    else if (x >= 260 && x < 448) fanLinkSetManual(fanDutyPct);
+    drawFan();
   }
 }
 
@@ -516,6 +622,7 @@ void uiShow(Screen next) {
   screen      = next;
   pressedCard = -1;
   seenLinkRev = linkRevision();
+  seenFanRev  = fanLinkRevision();
   nextClockMs = millis() + CLOCK_REFRESH_MS;
   nextStatsMs = millis() + STATS_REFRESH_MS;
   lastClients = linkPortalClients();
@@ -534,6 +641,13 @@ void uiShow(Screen next) {
       lanScanChanged();  // the full draw below covers it
       drawNetwork();
       break;
+    case Screen::Fan:
+      if (fanLinkHasSnapshot()) {
+        fanTargetC = fanLinkTargetC();
+        fanDutyPct = fanLinkManualDutyPct();
+      }
+      drawFan();
+      break;
   }
 }
 
@@ -548,6 +662,7 @@ const char *uiScreenName() {
     case Screen::Dashboard: return "dashboard";
     case Screen::Network:   return "network";
     case Screen::Setup:     return "setup";
+    case Screen::Fan:       return "fan";
   }
   return "";
 }
@@ -559,6 +674,7 @@ void uiTap(uint16_t x, uint16_t y) {
     case Screen::Dashboard: tapDashboard(x, y); break;
     case Screen::Network:   tapNetwork(x, y); break;
     case Screen::Setup:     tapSetup(x, y); break;
+    case Screen::Fan:       tapFan(x, y); break;
   }
 }
 
@@ -567,6 +683,8 @@ void uiTick(uint32_t now) {
 
   const bool linkChanged = linkRevision() != seenLinkRev;
   seenLinkRev            = linkRevision();
+  const bool fanChanged  = fanLinkRevision() != seenFanRev;
+  seenFanRev             = fanLinkRevision();
 
   // A portal that opened on its own (no network found) takes over the screen;
   // when it closes, leave the setup screen.
@@ -587,6 +705,7 @@ void uiTick(uint32_t now) {
 
   switch (screen) {
     case Screen::Dashboard: {
+      if (fanChanged) drawCard(0);
       if (linkChanged) {
         drawDashboardPill();
         drawCard(CARD_SYSTEM);
@@ -632,5 +751,6 @@ void uiTick(uint32_t now) {
       }
       break;
     }
+    case Screen::Fan: { if (fanChanged) drawFan(); break; }
   }
 }

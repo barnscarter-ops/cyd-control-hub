@@ -8,6 +8,7 @@
 #include <Arduino.h>
 
 #include "console.h"
+#include "fan_link.h"
 #include "gfx.h"
 #include "lan_scan.h"
 #include "theme.h"
@@ -34,6 +35,7 @@ void setup() {
 
   touchBegin();
   linkBegin();
+  fanLinkBegin();
   uiBegin();
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
   Serial.println(F("[BOOT] Ready - type 'help' for console commands"));
@@ -43,6 +45,7 @@ void loop() {
   const uint32_t now = millis();
 
   linkLoop(now);
+  fanLinkLoop(now);
   lanScanLoop(now);
 
   uint16_t x, y;

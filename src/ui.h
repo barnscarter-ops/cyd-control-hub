@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 
-enum class Screen : uint8_t { Dashboard, Network, Setup };
+enum class Screen : uint8_t { Dashboard, Network, Setup, Fan };
 
 void   uiBegin();                      // draws the first screen
 void   uiTick(uint32_t now);           // redraws whatever changed; call every loop

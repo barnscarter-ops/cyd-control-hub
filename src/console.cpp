@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "gfx.h"
+#include "fan_link.h"
 #include "lan_scan.h"
 #include "theme.h"
 #include "ui.h"
@@ -45,6 +46,14 @@ static void status() {
   }
   Serial.printf("[CON ] heap=%u min=%u largest=%u devices=%u\n", ESP.getFreeHeap(),
                 ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), (unsigned)lanDeviceCount());
+  Serial.printf("[CON ] fan=%s endpoint=%s queued=%u error=\"%s\"\n", fanLinkLabel(),
+                fanLinkHost().c_str(), fanLinkQueuedControls(), fanLinkError().c_str());
+  if (fanLinkHasSnapshot()) {
+    Serial.printf("[CON ] fan mode=%s temp=%s duty=%.0f%% healthy=%s age=%lus\n",
+                  fanLinkMode().c_str(), fanLinkSensorValid() ? String(fanLinkTemperatureC(), 1).c_str() : "invalid",
+                  fanLinkDutyPct(), fanLinkFanHealthy() ? "yes" : "no",
+                  (unsigned long)(fanLinkAgeMs(millis()) / 1000));
+  }
 }
 
 static void run(String cmd) {
@@ -52,9 +61,10 @@ static void run(String cmd) {
   if (cmd.isEmpty()) return;
 
   if (cmd == "help") {
-    Serial.println(F("[CON ] status | snap | tap <x> <y> | screen <dashboard|network|setup>"));
+    Serial.println(F("[CON ] status | snap | tap <x> <y> | screen <dashboard|network|setup|fan>"));
     Serial.println(F("[CON ] scan | portal | close | reboot"));
     Serial.println(F("[CON ] wifi add <ssid> <pass> | wifi list | wifi forget"));
+    Serial.println(F("[CON ] fan host <ip-or-name> [port]"));
   } else if (cmd == "status") {
     status();
   } else if (cmd == "snap") {
@@ -68,6 +78,8 @@ static void run(String cmd) {
     uiShow(Screen::Network);
   } else if (cmd == "screen setup") {
     uiShow(Screen::Setup);
+  } else if (cmd == "screen fan") {
+    uiShow(Screen::Fan);
   } else if (cmd == "scan") {
     lanScanStart();
   } else if (cmd == "portal") {
@@ -89,6 +101,9 @@ static void run(String cmd) {
     linkForgetAll();
   } else if (cmd == "reboot") {
     ESP.restart();
+  } else if (cmd.startsWith("fan host ")) {
+    const String rest = cmd.substring(9); const int sp = rest.indexOf(' ');
+    fanLinkConfigure((sp < 0 ? rest : rest.substring(0, sp)).c_str(), sp < 0 ? 80 : (uint16_t)rest.substring(sp + 1).toInt());
   } else {
     Serial.printf("[CON ] Unknown command \"%s\" - try help\n", cmd.c_str());
   }
