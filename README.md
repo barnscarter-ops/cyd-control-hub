@@ -22,8 +22,8 @@ The CYD is confirmed owned in the inventory at `../../../Inventory` from the pro
 - [hardware/parts.csv](hardware/parts.csv) — bill of materials and inventory decisions.
 - [procurement/needed.md](procurement/needed.md) — physical checks and items that must be obtained.
 - [hardware/wiring.md](hardware/wiring.md) — known board interfaces and proposed power practice.
-- [design/diagrams/breadboard/viewer.html](design/diagrams/breadboard/viewer.html) — fixed prototype arrangement.
-- [design/diagrams/pcb/viewer.html](design/diagrams/pcb/viewer.html) — fixed proposed working assembly.
+- [design/diagrams/breadboard/index.html](design/diagrams/breadboard/index.html) — fixed prototype arrangement.
+- [design/diagrams/pcb/index.html](design/diagrams/pcb/index.html) — fixed proposed working assembly.
 - [design/architecture/server-fan-api-v1.md](design/architecture/server-fan-api-v1.md) — versioned LAN interface.
 - [notes/handoff.md](notes/handoff.md) — exact next bench work.
 

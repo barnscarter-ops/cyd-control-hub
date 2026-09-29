@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Control Hub — Development Arrangement</title>
+<link rel="stylesheet" href="../lib/kit.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>Control Hub — 3D development arrangement</h1>
+    <p>CYD dashboard on USB power, talking to the separate server fan controller over Wi-Fi. No fan or load power is on this surface.</p>
+  </div>
+  <nav class="pages"><a href="index.html" aria-current="page">Development arrangement</a><a href="../pcb/index.html">Proposed assembly</a></nav>
+</header>
+<main>
+  <div class="stagewrap">
+    <div id="stage"></div>
+    <div class="toolbar" id="toolbar"></div>
+    <div class="legend"><span><i style="background:#ff6b9d"></i>5 V USB power</span><span><i style="background:#55d8e8"></i>Wi-Fi LAN</span><span><i style="background:#58b6ff"></i>service wiring (optional)</span></div>
+    <div class="hover" id="hover"></div>
+    <div class="hint">Drag to orbit · wheel to zoom · right-drag to pan · click a part</div>
+  </div>
+  <aside>
+    <p class="warn">Fixed design view. Not proof of wiring, pin order, ratings, or fit.</p>
+    <h2 id="title">Select a component</h2>
+    <div id="details"></div>
+    <h3>Links</h3>
+    <table id="nets"></table>
+    <h3>Parts</h3>
+    <div class="rail" id="rail"></div>
+  </aside>
+</main>
+<script src="../lib/three.min.js"></script>
+<script src="../lib/OrbitControls.js"></script>
+<script src="../lib/kit.js"></script>
+<script src="../lib/parts.js"></script>
+<script src="components.js"></script>
+<script src="scene.js"></script>
+</body>
+</html>
