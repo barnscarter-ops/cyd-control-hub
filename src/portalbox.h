@@ -28,12 +28,17 @@ String        pbApIp();
 uint8_t       pbClients();
 
 // Portal page library
-const char *pbBackendName();        // "sd" or "flash"
+const char *pbBackendName();        // "sd", "flash", or "none"
 size_t      pbPortalCount();
 String      pbPortalAt(size_t index);
+size_t      pbPortalSize(size_t index);
 String      pbSelectedPortal();
 bool        pbSelectPortal(const String &name);
 bool        pbSelectNextPortal();   // cycles the library, false if empty
+bool        pbDeletePortal(const String &name);
+size_t      pbSyncFromFlash();      // copies flash pages the card lacks, never overwrites
+uint64_t    pbStoreUsedBytes();
+uint64_t    pbStoreTotalBytes();
 
 // Captures
 uint32_t pbCaptureCount();

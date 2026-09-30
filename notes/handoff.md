@@ -36,11 +36,12 @@ Arduino's `LittleFS.begin()` looks for a partition labelled `spiffs` by default,
 
 ## Next bench work
 
-1. Re-flash the fixed firmware. Order matters: run `pio run -t uploadfs` first so `data/portals/Default.html` lands in LittleFS, then `pio run -t upload`, because the upload resets the board and that reset is when the flash-to-card seed runs. The `[PB  ]` lines should then report `portals=1`, list `Default.html`, and print the card size and flash usage.
-2. Hold the WIFI PENTESTER card and confirm the screen opens on a hold and not on a tap.
-3. Start the portal, join `Free WiFi` from a phone, and confirm the login page pops by itself. Submit a test entry, then check the counter, the last-email line, and `pb capture dump`.
-4. Stop the portal and confirm the hub rejoins its network, the LAN scan runs again, and the fan card returns to live values.
-5. Only then set `pb ssid` / `pb ch` for real use, and bench-measure the speaker pin before enabling the beep.
+1. Re-flash the fixed firmware. Order matters: `pio run -t uploadfs` first, so the pages in `data/portals/` (`Default.html`, `Airport.html`) land in LittleFS, then `pio run -t upload`, because the upload resets the board and that reset is when the flash-to-card sync runs. Expect `[PB  ] Card seeded with ...` lines, then `portals=2` with both page names, the card size, and flash usage.
+2. Confirm the page library is real: `pb portal list` should print the store, page count, used/total space, the served page, and each page with its size. **Sync Pages** on the device and **Next Portal** should both work, and re-uploading `data/` must reach a card that already has pages on it.
+3. Hold the WIFI PENTESTER card and confirm the screen opens on a hold and not on a tap.
+4. Start the portal, join `Free WiFi` from a phone, and confirm the login page pops by itself. Submit a test entry, then check the counter, the last-email line, and `pb capture dump`.
+5. Stop the portal and confirm the hub rejoins its network, the LAN scan runs again, and the fan card returns to live values.
+6. Only then set `pb ssid` / `pb ch` for real use, and bench-measure the speaker pin before enabling the beep.
 
 ## Still unverified
 

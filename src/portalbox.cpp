@@ -65,6 +65,7 @@ static uint32_t revision     = 0;
 static uint32_t lastClientMs = 0;
 
 static String portalNames[MAX_PORTAL_FILES];
+static size_t portalSizes[MAX_PORTAL_FILES];
 static size_t portalNameCount = 0;
 
 // ---------------------------------------------------------------------------
@@ -102,37 +103,38 @@ static void refreshPortalList() {
   File dir = store().open(PORTAL_DIR);
   if (!dir) return;
   for (File f = dir.openNextFile(); f && portalNameCount < MAX_PORTAL_FILES; f = dir.openNextFile()) {
-    if (!f.isDirectory()) portalNames[portalNameCount++] = baseName(String(f.name()));
+    if (!f.isDirectory()) {
+      portalSizes[portalNameCount] = (size_t)f.size();
+      portalNames[portalNameCount++] = baseName(String(f.name()));
+    }
     f.close();
   }
   dir.close();
 }
 
-// First mount of a card: copy the flash portal library onto it.
-static void seedFromFlash() {
-  bool empty = true;
-  File dir = SD.open(PORTAL_DIR);
-  if (dir) {
-    File f = dir.openNextFile();
-    empty = !f;
-    if (f) f.close();
-    dir.close();
-  }
-  if (!empty) return;
-
+// Copies every flash portal page the card does not already have. The card is
+// the authority: an existing file is never overwritten, so pages added or
+// edited on the card survive a re-seed. Returns how many files were copied.
+static size_t syncFromFlash() {
+  if (!sdReady || !flashReady) return 0;
+  size_t copied = 0;
   File src = LittleFS.open(PORTAL_DIR);
-  if (!src) return;
+  if (!src) return 0;
   for (File f = src.openNextFile(); f; f = src.openNextFile()) {
-    if (f.isDirectory()) { f.close(); continue; }
-    File out = SD.open(String(PORTAL_DIR) + "/" + baseName(String(f.name())), "w");
-    if (out) {
-      while (f.available()) out.write(f.read());
-      out.close();
+    const String name = baseName(String(f.name()));
+    if (!f.isDirectory() && validName(name) && !SD.exists(portalPath(name))) {
+      File out = SD.open(portalPath(name), "w");
+      if (out) {
+        while (f.available()) out.write(f.read());
+        out.close();
+        copied++;
+        Serial.printf("[PB  ] Card seeded with %s\n", name.c_str());
+      }
     }
     f.close();
   }
   src.close();
-  Serial.println(F("[PB  ] Seeded SD portal library from flash"));
+  return copied;
 }
 
 static uint32_t countLines(const String &path) {
@@ -245,7 +247,8 @@ void pbBegin() {
     if (!store().exists(PORTAL_DIR)) store().mkdir(PORTAL_DIR);
     if (!store().exists(CAPTURE_DIR)) store().mkdir(CAPTURE_DIR);
   }
-  if (sdReady && flashReady) seedFromFlash();
+  const size_t seeded = (sdReady && flashReady) ? syncFromFlash() : 0;
+  if (seeded) Serial.printf("[PB  ] %u page(s) copied from flash to the card\n", (unsigned)seeded);
 
   refreshPortalList();
   if (portalNameCount && !selectedPortal.length()) selectedPortal = portalNames[0];
@@ -354,6 +357,8 @@ size_t pbPortalCount() { return portalNameCount; }
 
 String pbPortalAt(size_t index) { return index < portalNameCount ? portalNames[index] : String(); }
 
+size_t pbPortalSize(size_t index) { return index < portalNameCount ? portalSizes[index] : 0; }
+
 String pbSelectedPortal() { return selectedPortal; }
 
 bool pbSelectPortal(const String &name) {
@@ -372,6 +377,34 @@ bool pbSelectNextPortal() {
   }
   return pbSelectPortal(portalNames[next]);
 }
+
+bool pbDeletePortal(const String &name) {
+  if (!validName(name) || !portalExists(name)) return false;
+  if (!store().remove(portalPath(name))) return false;
+  Serial.printf("[PB  ] Portal deleted: %s\n", name.c_str());
+  if (selectedPortal == name) selectedPortal = "";
+  refreshPortalList();
+  if (!selectedPortal.length() && portalNameCount) selectedPortal = portalNames[0];
+  revision++;
+  return true;
+}
+
+size_t pbSyncFromFlash() {
+  if (!sdReady) {
+    Serial.println(F("[PB  ] No card mounted - nothing to sync to"));
+    return 0;
+  }
+  const size_t copied = syncFromFlash();
+  if (copied) {
+    refreshPortalList();
+    if (!selectedPortal.length() && portalNameCount) selectedPortal = portalNames[0];
+    revision++;
+  }
+  return copied;
+}
+
+uint64_t pbStoreUsedBytes()  { return sdReady ? SD.usedBytes()  : (flashReady ? LittleFS.usedBytes()  : 0); }
+uint64_t pbStoreTotalBytes() { return sdReady ? SD.totalBytes() : (flashReady ? LittleFS.totalBytes() : 0); }
 
 // ---------------------------------------------------------------------------
 // Captures

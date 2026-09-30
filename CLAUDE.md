@@ -23,7 +23,7 @@ Single env: `cyd35`.
 - `src/main.cpp` — glue only: `setup()` inits each module once, `loop()` polls them.
 - `src/gfx.*` — the global `tft`, smooth-font helpers (`text`, `fitText`), and primitives (`card`, `pill`, `button`, `signalBars`, `headerRule`, `logoMark`, `iconBadge`). Every helper takes a `TFT_eSPI&` so it draws to the panel or a sprite.
 - `src/ui.*` — screens (Dashboard, Network, Setup, Fan, PortalBox) and navigation. `uiTick()` redraws only what changed.
-- `src/portalbox.*` — PortalBox captive-portal toolkit ported from `../portalbox`: own access point, wildcard DNS, `/get` capture contract, portal library and capture CSV on microSD with a LittleFS fallback. `data/portals/` is its seed page.
+- `src/portalbox.*` — PortalBox captive-portal toolkit ported from `../portalbox`: own access point, wildcard DNS, `/get` capture contract, portal library and capture CSV on microSD with a LittleFS fallback. `data/portals/` holds the pages shipped with the firmware; the device sync copies them to the card.
 - `src/wifi_link.*` — saved networks, auto-connect state machine, WiFiManager captive portal, NTP.
 - `src/lan_scan.*` — ARP sweep of the subnet to list connected devices.
 - `src/touch_input.*` — XPT2046 calibration and tap polling.
@@ -69,7 +69,7 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|portal [list|select <name>]|capture [dump|clear]|beep on|off`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `reboot`.
 
 ## Loop rules
 

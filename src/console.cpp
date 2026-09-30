@@ -71,7 +71,8 @@ static void run(String cmd) {
     Serial.println(F("[CON ] wifi add <ssid> <pass> | wifi list | wifi forget"));
     Serial.println(F("[CON ] fan host <ip-or-name> [port]"));
     Serial.println(F("[CON ] screen portalbox | pb start|stop|ssid <name>|ch <n>"));
-    Serial.println(F("[CON ] pb portal [list|select <name>] | pb capture [dump|clear] | pb beep on|off"));
+    Serial.println(F("[CON ] pb portal [list|sync|select <name>|delete <name>]"));
+    Serial.println(F("[CON ] pb capture [dump|clear] | pb beep on|off"));
   } else if (cmd == "status") {
     status();
   } else if (cmd == "snap") {
@@ -119,10 +120,18 @@ static void run(String cmd) {
   } else if (cmd.startsWith("pb ch ")) {
     pbSetChannel((uint8_t)cmd.substring(6).toInt());
   } else if (cmd == "pb portal list") {
-    for (size_t i = 0; i < pbPortalCount(); i++)
-      Serial.printf("[CON ] portal %u: %s\n", (unsigned)i, pbPortalAt(i).c_str());
-    Serial.printf("[CON ] serving: %s\n",
+    Serial.printf("[CON ] store=%s pages=%u used=%llu/%llu KB serving=%s\n", pbBackendName(),
+                  (unsigned)pbPortalCount(),
+                  (unsigned long long)(pbStoreUsedBytes() >> 10),
+                  (unsigned long long)(pbStoreTotalBytes() >> 10),
                   pbSelectedPortal().length() ? pbSelectedPortal().c_str() : "built-in");
+    for (size_t i = 0; i < pbPortalCount(); i++)
+      Serial.printf("[CON ]   %u: %s  %u B\n", (unsigned)i, pbPortalAt(i).c_str(),
+                    (unsigned)pbPortalSize(i));
+  } else if (cmd == "pb portal sync") {
+    Serial.printf("[CON ] sync: %u page(s) copied from flash\n", (unsigned)pbSyncFromFlash());
+  } else if (cmd.startsWith("pb portal delete ")) {
+    if (!pbDeletePortal(cmd.substring(17))) Serial.println(F("[CON ] No such portal"));
   } else if (cmd.startsWith("pb portal select ")) {
     if (!pbSelectPortal(cmd.substring(17))) Serial.println(F("[CON ] No such portal"));
   } else if (cmd == "pb capture dump") {

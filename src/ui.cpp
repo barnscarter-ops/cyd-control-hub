@@ -695,13 +695,21 @@ static void drawPbButtons() {
   button(tft, 16, PB_BTN_Y, PB_BTN_W, PB_BTN_H, pbActive() ? "Stop Portal" : "Start Portal",
          pbActive());
   button(tft, 170, PB_BTN_Y, PB_BTN_W, PB_BTN_H, "Next Portal", false);
-  button(tft, 324, PB_BTN_Y, PB_BTN_W, PB_BTN_H, "Clear Log", false);
+  button(tft, 324, PB_BTN_Y, PB_BTN_W, PB_BTN_H, "Sync Pages", false);
   button(tft, 16, y2, PB_BTN_W, PB_BTN_H, "Dump Log", false);
-  button(tft, 170, y2, PB_BTN_W, PB_BTN_H, pbBeepEnabled() ? "Beep On" : "Beep Off",
+  button(tft, 170, y2, PB_BTN_W, PB_BTN_H, "Clear Log", false);
+  button(tft, 324, y2, PB_BTN_W, PB_BTN_H, pbBeepEnabled() ? "Beep On" : "Beep Off",
          pbBeepEnabled());
-  text(tft, "SSID / channel come from the", 324, y2 + 6, Font::UiSm, COLOR_SUBTLE, COLOR_BG);
-  text(tft, "console: pb ssid <name>", 324, y2 + 20, Font::MonoSm, COLOR_MUTED, COLOR_BG);
-  text(tft, "pb ch <1-13>", 324, y2 + 34, Font::MonoSm, COLOR_MUTED, COLOR_BG);
+}
+
+// Status line plus the reminder that SSID and channel are console settings.
+static void drawPbHint() {
+  tft.fillRect(MARGIN, 280, SCREEN_W - 2 * MARGIN, 20, COLOR_BG);
+  text(tft, pbActive() ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
+                       : "Hold WIFI PENTESTER on the dashboard to open this screen",
+       MARGIN, 284, Font::UiSm, pbActive() ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
+  text(tft, "pb ssid | pb ch on console", SCREEN_W - MARGIN, 284, Font::MonoSm, COLOR_MUTED,
+       COLOR_BG, TR_DATUM);
 }
 
 static void drawPb() {
@@ -712,9 +720,7 @@ static void drawPb() {
   drawPbApCard();
   drawPbStoreCard();
   drawPbButtons();
-  text(tft, pbActive() ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
-                       : "Hold WIFI PENTESTER on the dashboard to open this screen",
-       MARGIN, 284, Font::UiSm, pbActive() ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
+  drawPbHint();
   drawFooter();
 }
 
@@ -730,7 +736,7 @@ static void tapPb(uint16_t x, uint16_t y) {
     } else if (x >= 170 && x < 170 + PB_BTN_W) {
       if (!pbSelectNextPortal()) Serial.println(F("[UI  ] No portal files to cycle"));
     } else if (x >= 324 && x < 324 + PB_BTN_W) {
-      pbClearCaptures();
+      Serial.printf("[UI  ] Portal sync: %u page(s) copied\n", (unsigned)pbSyncFromFlash());
     } else {
       return;
     }
@@ -739,6 +745,8 @@ static void tapPb(uint16_t x, uint16_t y) {
     if (x >= 16 && x < 16 + PB_BTN_W) {
       pbDumpCaptures(Serial);
     } else if (x >= 170 && x < 170 + PB_BTN_W) {
+      pbClearCaptures();
+    } else if (x >= 324 && x < 324 + PB_BTN_W) {
       pbSetBeep(!pbBeepEnabled());
     } else {
       return;
@@ -929,10 +937,7 @@ void uiTick(uint32_t now) {
       if (live != lastPbLive) {  // the button face follows the AP state
         lastPbLive = live;
         drawPbButtons();
-        tft.fillRect(MARGIN, 280, SCREEN_W - 2 * MARGIN, 20, COLOR_BG);
-        text(tft, live ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
-                       : "Hold WIFI PENTESTER on the dashboard to open this screen",
-             MARGIN, 284, Font::UiSm, live ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
+        drawPbHint();
       }
       break;
     }

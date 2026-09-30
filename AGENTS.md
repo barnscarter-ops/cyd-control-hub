@@ -26,7 +26,7 @@ Single env: `cyd35`.
 - `src/fan_link.*` — asynchronous HTTP client for the separate server fan controller's versioned API.
 - `src/wifi_link.*` — saved networks, auto-connect state machine, WiFiManager captive portal, NTP.
 - `src/lan_scan.*` — ARP sweep of the subnet to list connected devices.
-- `src/portalbox.*` — PortalBox captive-portal toolkit ported from `../portalbox`: own access point, wildcard DNS, `/get` capture contract, portal library and capture CSV on microSD with a LittleFS fallback. `data/portals/` is its seed page.
+- `src/portalbox.*` — PortalBox captive-portal toolkit ported from `../portalbox`: own access point, wildcard DNS, `/get` capture contract, portal library and capture CSV on microSD with a LittleFS fallback. `data/portals/` holds the pages shipped with the firmware; the device sync copies them to the card.
 - `src/touch_input.*` — XPT2046 calibration and tap polling.
 - `src/console.*` — serial debug commands.
 - `include/theme.h` — palette and layout geometry. `include/fonts/` — generated VLW smooth fonts (Inter, JetBrains Mono; both OFL).
@@ -70,7 +70,7 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|portal [list|select <name>]|capture [dump|clear]|beep on|off`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `reboot`.
 
 ## Loop rules
 
