@@ -74,10 +74,13 @@ looks for a partition labelled `spiffs`, and `partitions.csv` labels ours
 falls back to the built-in page. (The portalbox project carries the same latent
 bug in its own partition table.)
 
-Capture rows are `epoch,ip,portal,"email","password"` with commas, quotes, and
-newlines sanitized out of the submitted values. `epoch` is `0` until NTP has set
-the clock, which needs a station connection, so rows captured while the AP is up
-are untimed unless the hub was online before the portal started.
+Capture rows are `epoch,ip,portal,"email","password","extra"` with commas,
+quotes, and newlines sanitized out of the submitted values. Any form field is
+accepted: email-ish and password-ish names map to the email and password
+columns and everything else is kept in the extra column, so a cloned page's
+field names do not have to match the Marauder contract. `epoch` is `0` until NTP
+has set the clock, which needs a station connection, so rows captured while the
+AP is up are untimed unless the hub was online before the portal started.
 
 Flash layout (`partitions.csv`) is one application slot plus LittleFS, because
 this board is flashed over USB serial and does not need OTA:
@@ -117,6 +120,33 @@ currently served, and every page with its size. On the device, the PORTAL
 LIBRARY card shows the backend, count, served page, and last captured address,
 and **Next Portal** cycles the library one page at a time.
 
+## Cloning a captive portal page
+
+`pb clone <url> [Name.html]` fetches a real portal page and stores a local copy
+that the AP can serve with no internet behind it:
+
+- the HTML is fetched (HTTP or HTTPS, no certificate validation) with the
+  forms rewritten to `action="/get"` so submissions still reach the capture
+  handler;
+- `<link rel=stylesheet>` files are fetched and inlined as `<style>`;
+- `<img>`, `<script>`, and `<source>` files are saved under
+  `/portals/assets/` and their references rewritten to the local
+  `/assets/<name>` route, which the server streams with the right content type;
+- `<base>` tags are dropped so they cannot re-point the relative links;
+- a `<!-- cloned from <url> -->` comment marks the copy, and the page is
+  selected and served immediately.
+
+The clone needs the hub online, so the sequence is: join the target network,
+clone, then start the AP. `pb clone` is a blocking console command (like
+`wifi list`); the display does not update while it runs.
+
+Limits: the page is capped at 48 KB, each asset at 24 KB, and 12 assets per
+clone. Anything over the cap is truncated and reported. A JavaScript-heavy
+single-page portal will still render from its saved assets, but anything it
+loads from its origin server at runtime cannot work behind an AP with no
+internet. Classic form-based splash pages are the target this feature is built
+for.
+
 ## Screen controls
 
 | Control | Action |
@@ -144,6 +174,7 @@ keyboard: `pb ssid <name>` and `pb ch <1-13>`.
 | `pb ch <1-13>` | Access-point channel used at the next start. |
 | `pb portal list` | List the portal library and the page currently served. |
 | `pb portal select <name>` | Serve a specific page. |
+| `pb clone <url> [Name.html]` | Fetch a real portal page into the library; needs the hub online. |
 | `pb portal sync` | Copy flash pages the card lacks; prints the number copied. |
 | `pb portal delete <name>` | Remove a page from the active store. |
 | `pb capture dump` / `pb capture clear` | Print or delete the capture log. |

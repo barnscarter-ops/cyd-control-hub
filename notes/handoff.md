@@ -43,6 +43,8 @@ Arduino's `LittleFS.begin()` looks for a partition labelled `spiffs` by default,
 5. Stop the portal and confirm the hub rejoins its network, the LAN scan runs again, and the fan card returns to live values.
 6. Only then set `pb ssid` / `pb ch` for real use, and bench-measure the speaker pin before enabling the beep.
 
+Portal cloning (`pb clone <url> [Name.html]`) needs the hub online, so join a network first (`wifi add <ssid> <pass>` or the Setup screen), run the clone, then start the portal. Target a simple form-based splash page for the first try; a JavaScript-heavy single-page portal will render from its saved assets but may not behave identically once the AP has no internet behind it.
+
 ## Still unverified
 
 Nothing in this feature has been exercised past initialization: no access point has been started, no page served, no client joined, no capture written, no portal file listed, and the hold gesture has not been touched. The radio handover and the resume path are unexercised, and the Server Fan screen's live API exchange is still unverified from the previous handoff.

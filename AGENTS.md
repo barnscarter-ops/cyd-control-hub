@@ -70,7 +70,7 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|clone <url> [Name.html]|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `reboot`.
 
 ## Loop rules
 

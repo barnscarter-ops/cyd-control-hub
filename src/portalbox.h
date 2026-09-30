@@ -37,6 +37,7 @@ bool        pbSelectPortal(const String &name);
 bool        pbSelectNextPortal();   // cycles the library, false if empty
 bool        pbDeletePortal(const String &name);
 size_t      pbSyncFromFlash();      // copies flash pages the card lacks, never overwrites
+bool        pbClone(const String &url, const String &pageName);  // fetch a real portal page; needs the hub online
 uint64_t    pbStoreUsedBytes();
 uint64_t    pbStoreTotalBytes();
 

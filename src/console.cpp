@@ -72,6 +72,7 @@ static void run(String cmd) {
     Serial.println(F("[CON ] fan host <ip-or-name> [port]"));
     Serial.println(F("[CON ] screen portalbox | pb start|stop|ssid <name>|ch <n>"));
     Serial.println(F("[CON ] pb portal [list|sync|select <name>|delete <name>]"));
+    Serial.println(F("[CON ] pb clone <url> [Name.html] - save a real portal page as a portal"));
     Serial.println(F("[CON ] pb capture [dump|clear] | pb beep on|off"));
   } else if (cmd == "status") {
     status();
@@ -128,6 +129,11 @@ static void run(String cmd) {
     for (size_t i = 0; i < pbPortalCount(); i++)
       Serial.printf("[CON ]   %u: %s  %u B\n", (unsigned)i, pbPortalAt(i).c_str(),
                     (unsigned)pbPortalSize(i));
+  } else if (cmd.startsWith("pb clone ")) {
+    const String rest = cmd.substring(9);
+    const int    sp   = rest.indexOf(' ');
+    if (!pbClone(sp < 0 ? rest : rest.substring(0, sp), sp < 0 ? "" : rest.substring(sp + 1)))
+      Serial.println(F("[CON ] Clone failed"));
   } else if (cmd == "pb portal sync") {
     Serial.printf("[CON ] sync: %u page(s) copied from flash\n", (unsigned)pbSyncFromFlash());
   } else if (cmd.startsWith("pb portal delete ")) {
