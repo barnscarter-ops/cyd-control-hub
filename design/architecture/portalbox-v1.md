@@ -66,6 +66,14 @@ Portal HTML is streamed from the filesystem, so a page is not limited by RAM.
 | Fallback backend | the LittleFS partition |
 | Seed | the first card mount copies `/portals` from flash to the card |
 
+The LittleFS mount names its partition explicitly —
+`LittleFS.begin(true, "/littlefs", 10, "littlefs")`. Arduino's default mount
+looks for a partition labelled `spiffs`, and `partitions.csv` labels ours
+`littlefs`, so omitting that argument fails with
+`partition "spiffs" could not be found` and every portal-library read silently
+falls back to the built-in page. (The portalbox project carries the same latent
+bug in its own partition table.)
+
 Capture rows are `epoch,ip,portal,"email","password"` with commas, quotes, and
 newlines sanitized out of the submitted values. `epoch` is `0` until NTP has set
 the clock, which needs a station connection, so rows captured while the AP is up
@@ -82,8 +90,9 @@ this board is flashed over USB serial and does not need OTA:
 
 `board_build.filesystem = littlefs` and `board_build.partitions = partitions.csv`
 in `platformio.ini`; `pio run -t uploadfs` seeds `data/portals/Default.html`.
-Changing the partition table rewrites NVS, so the first flash of this build
-requires a fresh touch calibration and re-adding Wi-Fi networks.
+The `nvs` partition keeps its offset across this table change, so on CH-01 the
+touch calibration and the saved Wi-Fi networks survived the first flash
+(2026-09-30). Re-do them only if the `nvs` offset or size changes.
 
 ## Screen controls
 

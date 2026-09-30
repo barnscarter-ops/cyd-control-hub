@@ -53,6 +53,7 @@ static DNSServer dns;
 
 static bool     active      = false;
 static bool     sdReady     = false;
+static bool     flashReady  = false;
 static bool     beepEnabled = false;
 static String   apSsid;
 static uint8_t  apChannel   = DEFAULT_CHANNEL;
@@ -71,7 +72,11 @@ static size_t portalNameCount = 0;
 // ---------------------------------------------------------------------------
 static fs::FS &store() { return sdReady ? (fs::FS &)SD : (fs::FS &)LittleFS; }
 
-const char *pbBackendName() { return sdReady ? "sd" : "flash"; }
+const char *pbBackendName() {
+  if (sdReady) return "sd";
+  if (flashReady) return "flash";
+  return "none";
+}
 
 static String baseName(const String &path) {
   const int slash = path.lastIndexOf('/');
@@ -228,11 +233,19 @@ static void registerRoutes() {
 // Lifecycle
 // ---------------------------------------------------------------------------
 void pbBegin() {
-  LittleFS.begin(true);
-  sdReady = SD.begin(SD_CS_PIN);
-  if (!store().exists(PORTAL_DIR)) store().mkdir(PORTAL_DIR);
-  if (!store().exists(CAPTURE_DIR)) store().mkdir(CAPTURE_DIR);
-  if (sdReady) seedFromFlash();
+  // Arduino's LittleFS looks for a partition labelled "spiffs"; partitions.csv
+  // labels ours "littlefs", so the mount has to name it.
+  flashReady = LittleFS.begin(true, "/littlefs", 10, "littlefs");
+  if (!flashReady) Serial.println(F("[PB  ] LittleFS mount failed - flash backend unavailable"));
+
+  sdReady = SD.begin(SD_CS_PIN);   // cs IO5, confirmed mounted on CH-01 2026-09-30
+  if (!sdReady) Serial.println(F("[PB  ] No microSD card - flash backend only"));
+
+  if (sdReady || flashReady) {
+    if (!store().exists(PORTAL_DIR)) store().mkdir(PORTAL_DIR);
+    if (!store().exists(CAPTURE_DIR)) store().mkdir(CAPTURE_DIR);
+  }
+  if (sdReady && flashReady) seedFromFlash();
 
   refreshPortalList();
   if (portalNameCount && !selectedPortal.length()) selectedPortal = portalNames[0];
@@ -241,6 +254,12 @@ void pbBegin() {
 
   Serial.printf("[PB  ] PortalBox ready: store=%s portals=%u captures=%lu\n", pbBackendName(),
                 (unsigned)portalNameCount, (unsigned long)captureCount);
+  if (sdReady)
+    Serial.printf("[PB  ] microSD: %llu MB total\n", (unsigned long long)(SD.totalBytes() >> 20));
+  if (flashReady)
+    Serial.printf("[PB  ] LittleFS: %llu of %llu KB used\n",
+                  (unsigned long long)(LittleFS.usedBytes() >> 10),
+                  (unsigned long long)(LittleFS.totalBytes() >> 10));
   for (size_t i = 0; i < portalNameCount; i++) Serial.printf("[PB  ]   portal: %s\n", portalNames[i].c_str());
 }
 
@@ -248,6 +267,8 @@ bool pbActive() { return active; }
 
 bool pbStart() {
   if (active) return true;
+  if (!sdReady && !flashReady)
+    Serial.println(F("[PB  ] No storage - built-in page only, captures are not logged"));
 
   // The hub's setup AP and the portal AP cannot share the radio.
   if (linkPortalActive()) linkClosePortal();
