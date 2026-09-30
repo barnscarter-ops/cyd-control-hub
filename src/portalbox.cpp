@@ -138,6 +138,7 @@ static size_t syncFromFlash() {
 }
 
 static uint32_t countLines(const String &path) {
+  if (!store().exists(path)) return 0;   // no log yet is normal, not an error
   File f = store().open(path, "r");
   if (!f) return 0;
   uint32_t n = 0;
