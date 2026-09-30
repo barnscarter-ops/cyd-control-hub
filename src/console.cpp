@@ -5,6 +5,7 @@
 #include "gfx.h"
 #include "fan_link.h"
 #include "lan_scan.h"
+#include "portalbox.h"
 #include "theme.h"
 #include "ui.h"
 #include "wifi_link.h"
@@ -46,6 +47,10 @@ static void status() {
   }
   Serial.printf("[CON ] heap=%u min=%u largest=%u devices=%u\n", ESP.getFreeHeap(),
                 ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), (unsigned)lanDeviceCount());
+  Serial.printf("[CON ] portalbox=%s store=%s portals=%u serving=%s captures=%lu clients=%u\n",
+                pbActive() ? "up" : "idle", pbBackendName(), (unsigned)pbPortalCount(),
+                pbSelectedPortal().length() ? pbSelectedPortal().c_str() : "built-in",
+                (unsigned long)pbCaptureCount(), (unsigned)pbClients());
   Serial.printf("[CON ] fan=%s endpoint=%s queued=%u error=\"%s\"\n", fanLinkLabel(),
                 fanLinkHost().c_str(), fanLinkQueuedControls(), fanLinkError().c_str());
   if (fanLinkHasSnapshot()) {
@@ -65,6 +70,8 @@ static void run(String cmd) {
     Serial.println(F("[CON ] scan | portal | close | reboot"));
     Serial.println(F("[CON ] wifi add <ssid> <pass> | wifi list | wifi forget"));
     Serial.println(F("[CON ] fan host <ip-or-name> [port]"));
+    Serial.println(F("[CON ] screen portalbox | pb start|stop|ssid <name>|ch <n>"));
+    Serial.println(F("[CON ] pb portal [list|select <name>] | pb capture [dump|clear] | pb beep on|off"));
   } else if (cmd == "status") {
     status();
   } else if (cmd == "snap") {
@@ -80,6 +87,8 @@ static void run(String cmd) {
     uiShow(Screen::Setup);
   } else if (cmd == "screen fan") {
     uiShow(Screen::Fan);
+  } else if (cmd == "screen portalbox") {
+    uiShow(Screen::PortalBox);
   } else if (cmd == "scan") {
     lanScanStart();
   } else if (cmd == "portal") {
@@ -101,6 +110,29 @@ static void run(String cmd) {
     linkForgetAll();
   } else if (cmd == "reboot") {
     ESP.restart();
+  } else if (cmd == "pb start") {
+    pbStart();
+  } else if (cmd == "pb stop") {
+    pbStop();
+  } else if (cmd.startsWith("pb ssid ")) {
+    pbSetSsid(cmd.substring(8));
+  } else if (cmd.startsWith("pb ch ")) {
+    pbSetChannel((uint8_t)cmd.substring(6).toInt());
+  } else if (cmd == "pb portal list") {
+    for (size_t i = 0; i < pbPortalCount(); i++)
+      Serial.printf("[CON ] portal %u: %s\n", (unsigned)i, pbPortalAt(i).c_str());
+    Serial.printf("[CON ] serving: %s\n",
+                  pbSelectedPortal().length() ? pbSelectedPortal().c_str() : "built-in");
+  } else if (cmd.startsWith("pb portal select ")) {
+    if (!pbSelectPortal(cmd.substring(17))) Serial.println(F("[CON ] No such portal"));
+  } else if (cmd == "pb capture dump") {
+    pbDumpCaptures(Serial);
+  } else if (cmd == "pb capture clear") {
+    pbClearCaptures();
+  } else if (cmd == "pb beep on") {
+    pbSetBeep(true);
+  } else if (cmd == "pb beep off") {
+    pbSetBeep(false);
   } else if (cmd.startsWith("fan host ")) {
     const String rest = cmd.substring(9); const int sp = rest.indexOf(' ');
     fanLinkConfigure((sp < 0 ? rest : rest.substring(0, sp)).c_str(), sp < 0 ? 80 : (uint16_t)rest.substring(sp + 1).toInt());

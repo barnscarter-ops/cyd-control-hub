@@ -58,6 +58,8 @@ void touchBegin() {
   Serial.println(F("[TOUCH] XPT2046 ready"));
 }
 
+bool touchDown() { return digitalRead(TOUCH_IRQ) == LOW; }
+
 bool touchTapped(uint32_t now, uint16_t &x, uint16_t &y) {
   if (now - lastPollMs < TOUCH_POLL_INTERVAL_MS) return false;
   lastPollMs = now;

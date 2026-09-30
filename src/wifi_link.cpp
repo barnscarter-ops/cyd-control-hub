@@ -244,8 +244,37 @@ void linkLoop(uint32_t now) {
         setState(LinkState::Searching);
       }
       break;
+
+    case LinkState::Suspended:
+      break;  // the PortalBox access point owns the radio
   }
 }
+
+void linkSuspend() {
+  if (state == LinkState::Suspended) return;
+  if (portalActive) linkClosePortal();
+  if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
+    WiFi.scanDelete();
+    scanPending = false;
+  }
+  WiFi.disconnect(true, false);  // radio off, saved credentials untouched
+  failedScans = 0;
+  setState(LinkState::Suspended);
+  Serial.println(F("[WIFI] Link suspended - PortalBox owns the radio"));
+}
+
+void linkResume() {
+  if (state != LinkState::Suspended) return;
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(HOSTNAME);  // a mode change drops the hostname
+  failedScans = 0;
+  nextScanMs  = 0;
+  setState(savedCount ? LinkState::Searching : LinkState::Offline);
+  Serial.println(F("[WIFI] Link resumed"));
+  if (savedCount == 0) linkOpenPortal();
+}
+
+bool linkSuspended() { return state == LinkState::Suspended; }
 
 LinkState linkState() { return state; }
 
@@ -255,6 +284,7 @@ const char *linkStateLabel() {
     case LinkState::Connecting: return "CONNECTING";
     case LinkState::Online:     return "ONLINE";
     case LinkState::Offline:    return "OFFLINE";
+  case LinkState::Suspended:  return "SUSPENDED";
   }
   return "";
 }
@@ -263,6 +293,10 @@ bool linkPortalActive() { return portalActive; }
 
 void linkOpenPortal() {
   if (portalActive) return;
+  if (state == LinkState::Suspended) {
+    Serial.println(F("[WIFI] Setup portal refused - PortalBox AP is up"));
+    return;
+  }
   if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
     WiFi.scanDelete();
     scanPending = false;

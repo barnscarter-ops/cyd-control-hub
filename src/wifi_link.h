@@ -12,6 +12,7 @@ enum class LinkState : uint8_t {
   Connecting,  // joining a saved network
   Online,      // connected with an IP
   Offline,     // no saved network in range (retrying in the background)
+  Suspended,   // radio handed to the PortalBox access point
 };
 
 static const size_t MAX_SAVED = 5;
@@ -29,6 +30,12 @@ void          linkClosePortal();
 const String &linkPortalSsid();
 const String &linkPortalPass();
 uint8_t       linkPortalClients();
+
+// Radio handover: PortalBox owns the radio while its own AP is up, so the
+// setup portal, the scan, and the fan client all have to stand down.
+void linkSuspend();
+void linkResume();
+bool linkSuspended();
 
 // Saved networks
 size_t        linkSavedCount();

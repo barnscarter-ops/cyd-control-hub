@@ -1,0 +1,11 @@
+# Control Hub partition table (4 MB flash, no OTA)
+#
+# The hub is flashed over USB serial, so there is one application slot and the
+# rest of the flash is a LittleFS partition for the PortalBox page library and
+# capture logs. NVS keeps the saved Wi-Fi networks and touch calibration.
+#
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x6000
+phy_init, data, phy,     0xf000,   0x1000
+factory,  app,  factory, 0x10000,  0x1B0000
+littlefs, data, spiffs,  0x1C0000, 0x240000

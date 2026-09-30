@@ -11,6 +11,7 @@
 #include "fan_link.h"
 #include "gfx.h"
 #include "lan_scan.h"
+#include "portalbox.h"
 #include "theme.h"
 #include "touch_input.h"
 #include "ui.h"
@@ -36,6 +37,7 @@ void setup() {
   touchBegin();
   linkBegin();
   fanLinkBegin();
+  pbBegin();
   uiBegin();
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
   Serial.println(F("[BOOT] Ready - type 'help' for console commands"));
@@ -47,6 +49,7 @@ void loop() {
   linkLoop(now);
   fanLinkLoop(now);
   lanScanLoop(now);
+  pbLoop(now);
 
   uint16_t x, y;
   if (touchTapped(now, x, y)) uiTap(x, y);

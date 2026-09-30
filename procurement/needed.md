@@ -9,6 +9,8 @@ This list is derived from `hardware/parts.csv` and the sibling `../../../Invento
 | CH-02 | A sound USB-C lead and a reputable regulated 5 V supply with adequate headroom | The CYD must have a stable supply for Wi-Fi and display peaks. |
 | CH-03 | Wire length, insulation, and conductor condition | The listed 22 AWG kit is owner-reported and its remaining stock is unknown. |
 | CH-05 | M3 hardware dimensions and quantity | The kit's hardware has not been counted or checked against the CYD mounting pattern. |
+| CH-07 | Confirm the installed microSD card mounts and reports its size in the boot log | PortalBox prefers the card for the portal library and capture logs, but the card is owner-reported and its mount has never been seen in a serial log. |
+| CH-01 | Confirm the onboard speaker-amplifier pin (assumed IO26, inherited from the portalbox project) before enabling the capture beep | The capture beep ships disabled because that pin is not bench-measured on this board. |
 
 ## Confirmed needed
 
@@ -21,5 +23,6 @@ This list is derived from `hardware/parts.csv` and the sibling `../../../Invento
 | Part ID | Benefit | Cost or tradeoff |
 | --- | --- | --- |
 | CH-05 | A purpose-designed printed bezel/backplate protects the board, supports service access, and adds strain relief. | Requires dimensional measurement, print material selection, and M3 hardware fit check. |
+| CH-07 | A second card lets a portal library and capture set be swapped without reflashing. | Only worth obtaining once the installed card is confirmed working. |
 
 No purchase is approved by this list. Update verified quantity and suitability in `hardware/parts.csv` after inspection before ordering.

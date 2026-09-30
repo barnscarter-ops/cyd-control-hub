@@ -10,6 +10,7 @@ PlatformIO CLI is not on PATH on this machine; use the full path (or the VS Code
 ~/.platformio/penv/Scripts/pio.exe run                      # build
 ~/.platformio/penv/Scripts/pio.exe run -t upload            # flash
 ~/.platformio/penv/Scripts/pio.exe device monitor           # serial @ 115200
+~/.platformio/penv/Scripts/pio.exe run -t uploadfs          # seed data/ into the LittleFS partition
 ~/.platformio/penv/Scripts/python.exe tools/snap.py COM22 out.png [--cmd "screen network"]  # screenshot
 python tools/gen_fonts.py                                   # regenerate include/fonts/*.h (needs Pillow)
 ```
@@ -18,10 +19,11 @@ Single env: `cyd35`.
 
 ## Layout
 
-- `platformio.ini` — board, libs, and **all TFT_eSPI config** via `build_flags`.
+- `platformio.ini` — board, libs, **all TFT_eSPI config** via `build_flags`, and the partition/filesystem settings. `partitions.csv` — one app slot plus the LittleFS partition (no OTA).
 - `src/main.cpp` — glue only: `setup()` inits each module once, `loop()` polls them.
 - `src/gfx.*` — the global `tft`, smooth-font helpers (`text`, `fitText`), and primitives (`card`, `pill`, `button`, `signalBars`, `headerRule`, `logoMark`, `iconBadge`). Every helper takes a `TFT_eSPI&` so it draws to the panel or a sprite.
-- `src/ui.*` — screens (Dashboard, Network, Setup) and navigation. `uiTick()` redraws only what changed.
+- `src/ui.*` — screens (Dashboard, Network, Setup, Fan, PortalBox) and navigation. `uiTick()` redraws only what changed.
+- `src/portalbox.*` — PortalBox captive-portal toolkit ported from `../portalbox`: own access point, wildcard DNS, `/get` capture contract, portal library and capture CSV on microSD with a LittleFS fallback. `data/portals/` is its seed page.
 - `src/wifi_link.*` — saved networks, auto-connect state machine, WiFiManager captive portal, NTP.
 - `src/lan_scan.*` — ARP sweep of the subnet to list connected devices.
 - `src/touch_input.*` — XPT2046 calibration and tap polling.
@@ -45,6 +47,7 @@ Single env: `cyd35`.
 - Colors and geometry come from `include/theme.h`. Cards are `COLOR_PANEL` with a 1px `COLOR_EDGE` border, radius 10; accent is `COLOR_CYAN`; status colors are `COLOR_MATRIX` (good), `COLOR_AMBER` (pending), `COLOR_RED` (fault).
 - Anything that redraws after the first frame goes through `offscreen(x, y, w, h, fn)` in `ui.cpp`: it renders to a temporary sprite and pushes it in one go (no flicker), falling back to direct drawing if heap is short. Keep sprites around row/card size — no full-screen sprites (not enough RAM).
 - Dashboard cards are the `CARDS[]` table; their live values come from `cardValue(i)`. Card taps highlight for 140 ms, then act in `releaseCard()`.
+- `WIFI PENTESTER` (`CARD_PENTEST`) is the one hold gesture: `uiTick()` keeps its highlight instead of releasing at 140 ms and opens `Screen::PortalBox` after `LONG_PRESS_MS` (600 ms) while `touchDown()` is still true. A short tap only drops the highlight.
 
 ## Wi-Fi
 
@@ -52,6 +55,7 @@ Single env: `cyd35`.
 - WiFiManager runs **non-blocking** (`wm.process()` in `linkLoop`) and only collects credentials: its save callback hands them to `linkAddNetwork()`; our state machine does the connecting. The portal opens automatically when nothing is saved or after 2 failed scans, and on demand from Network > Add Wi-Fi. AP is `ControlHub-XXXX` with a password derived from the MAC (both shown on the Setup screen with a Wi-Fi QR code from the IDF `esp_qrcode` component).
 - ESP32 is 2.4 GHz only: iPhone hotspots need **Maximize Compatibility**; the Windows hotspot band must be 2.4 GHz or Any.
 - Time: `configTzTime` with US Central (`CST6CDT,M3.2.0,M11.1.0`) once online.
+- Radio handover: PortalBox runs its own AP, so only one access point can exist at a time. `linkSuspend()` closes the setup portal, turns the station radio off, and sets `LinkState::Suspended`; `linkOpenPortal()` refuses to open the setup portal in that state; `linkResume()` restores station mode and restarts the scan. LAN scanning and fan polling stop on their own connection checks and resume with it.
 
 ## LAN scan
 
@@ -65,15 +69,16 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|portal [list|select <name>]|capture [dump|clear]|beep on|off`, `reboot`.
 
 ## Loop rules
 
 - `loop()` must stay non-blocking: no `delay()`, no blocking network calls. Use `millis()` timers. (Exceptions: `setup()`, touch calibration, and debug console commands.)
-- Serial log lines use a short tag prefix: `[BOOT]`, `[TFT ]`, `[UI  ]`, `[TOUCH]`, `[WIFI]`, `[LAN ]`, `[CON ]`, `[HB  ]`.
+- Serial log lines use a short tag prefix: `[BOOT]`, `[TFT ]`, `[UI  ]`, `[TOUCH]`, `[WIFI]`, `[LAN ]`, `[PB  ]`, `[CON ]`, `[HB  ]`.
 
 ## Libraries
 
 - `bodmer/TFT_eSPI` — display and touch.
 - `tzapu/WiFiManager` — captive portal.
-- `bblanchon/ArduinoJson` — included for upcoming home-automation payload parsing; not used yet.
+- `bblanchon/ArduinoJson` — parses server fan controller status and control responses.
+- Core libraries used directly (no `lib_deps` entry needed): `WebServer`, `DNSServer`, `LittleFS`, `SD` — PortalBox page library and capture log.

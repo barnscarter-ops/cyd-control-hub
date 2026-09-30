@@ -7,12 +7,15 @@
 #include "gfx.h"
 #include "fan_link.h"
 #include "lan_scan.h"
+#include "portalbox.h"
 #include "theme.h"
+#include "touch_input.h"
 #include "wifi_link.h"
 
 static const uint32_t CLOCK_REFRESH_MS   = 1000;
 static const uint32_t STATS_REFRESH_MS   = 5000;
 static const uint32_t PRESS_FEEDBACK_MS  = 140;
+static const uint32_t LONG_PRESS_MS       = 600;   // hold that opens PortalBox
 static const uint32_t LAN_STALE_MS       = 60000;
 
 static const int16_t  TABLE_Y     = 128;
@@ -41,6 +44,7 @@ static uint8_t  tablePage       = 0;
 static uint32_t tableSig        = 0;
 static bool     lastScanRunning = false;
 static uint8_t  lastClients     = 0;
+static bool     longPressDone   = false;  // the current card press already fired its hold action
 
 // ---------------------------------------------------------------------------
 // Off-screen rendering
@@ -78,6 +82,7 @@ static Tone linkTone() {
     case LinkState::Offline:
       if (linkPortalActive()) return {"SETUP MODE", COLOR_CYAN, COLOR_CYAN_TINT};
       return {"OFFLINE", COLOR_RED, COLOR_RED_TINT};
+    case LinkState::Suspended: return {"PENTEST AP", COLOR_CYAN, COLOR_CYAN_TINT};
   }
   return {"", COLOR_SUBTLE, COLOR_PANEL};
 }
@@ -128,6 +133,8 @@ static void drawFooter() {
       }
     } else if (linkState() == LinkState::Online) {
       left = WiFi.localIP().toString() + " · " + WiFi.SSID();
+    } else if (linkState() == LinkState::Suspended) {
+      left = "AP " + pbSsid() + " · " + pbApIp();
     } else if (linkPortalActive()) {
       left = "AP " + linkPortalSsid() + " · 192.168.4.1";
     } else {
@@ -160,8 +167,9 @@ static const CardDef CARDS[] = {
     {"WIFI PENTESTER", "Audit toolkit", Icon::Wifi, COL_LEFT_X, ROW_BOT_Y},
     {"SYSTEM STATUS", "Network & devices", Icon::Pulse, COL_RIGHT_X, ROW_BOT_Y},
 };
-static const size_t CARD_COUNT = sizeof(CARDS) / sizeof(CARDS[0]);
+static const size_t CARD_COUNT  = sizeof(CARDS) / sizeof(CARDS[0]);
 static const size_t CARD_SYSTEM = 3;
+static const size_t CARD_PENTEST = 2;  // hold to open PortalBox
 
 struct CardValue {
   String   value;
@@ -186,7 +194,11 @@ static CardValue cardValue(size_t i) {
       return {value, color, meta};
     }
     case 1: return {"CLOSED", COLOR_MATRIX, "Locked"};
-    case 2: return {"READY", COLOR_CYAN, "Standby"};
+    case 2:
+      if (pbActive())
+        return {"LIVE", COLOR_MATRIX,
+                String(pbClients()) + (pbClients() == 1 ? " client" : " clients")};
+      return {"READY", COLOR_CYAN, "Hold to open"};
   }
   switch (linkState()) {
     case LinkState::Online:
@@ -194,6 +206,7 @@ static CardValue cardValue(size_t i) {
               lanScanFinishedMs() ? String(lanDeviceCount()) + " devices" : WiFi.SSID()};
     case LinkState::Searching:  return {"LINKING", COLOR_AMBER, "Searching"};
     case LinkState::Connecting: return {"LINKING", COLOR_AMBER, "Joining"};
+    case LinkState::Suspended:  return {"PAUSED", COLOR_CYAN, "Pentest AP"};
     case LinkState::Offline:    break;
   }
   if (linkPortalActive()) return {"SETUP", COLOR_CYAN, "Add Wi-Fi"};
@@ -211,7 +224,7 @@ static void drawCard(size_t i) {
     text(g, def.subtitle, ox + 58, oy + 34, Font::UiSm, COLOR_SUBTLE, fill);
     g.drawFastHLine(ox + 14, oy + 60, CARD_W - 28, COLOR_EDGE);
 
-    // Cards that open a screen get a chevron after the meta text.
+    // Cards that open on a tap get a chevron; WIFI PENTESTER opens on a hold.
     const bool    nav    = i == CARD_SYSTEM || i == 0;
     const int16_t metaR  = CARD_W - 14 - (nav ? 16 : 0);
     if (nav) chevron(g, ox + CARD_W - 18, oy + CARD_H - 22, COLOR_CYAN, fill);
@@ -267,8 +280,9 @@ static void tapDashboard(uint16_t x, uint16_t y) {
     const CardDef &c = CARDS[i];
     if (x >= c.x && x < c.x + CARD_W && y >= c.y && y < c.y + CARD_H) {
       Serial.printf("[UI  ] Card tapped: %s\n", c.title);
-      pressedCard = (int8_t)i;
-      pressedAtMs = millis();
+      pressedCard   = (int8_t)i;
+      pressedAtMs   = millis();
+      longPressDone = false;
       drawCard(i);
       return;
     }
@@ -616,6 +630,124 @@ static void tapSetup(uint16_t x, uint16_t y) {
 }
 
 // ---------------------------------------------------------------------------
+// PortalBox screen (opened by holding the WIFI PENTESTER card)
+// ---------------------------------------------------------------------------
+static const int16_t  PB_CARD_H  = 118;
+static const int16_t  PB_BTN_Y   = 188;
+static const int16_t  PB_BTN_H   = 38;
+static const int16_t  PB_BTN_W   = 140;
+static const int16_t  PB_ROW_Y[4] = {34, 56, 78, 100};
+static uint32_t       seenPbRev  = 0;
+static bool           lastPbLive = false;
+
+static void pbRow(TFT_eSPI &g, int16_t ox, int16_t oy, int16_t w, int16_t y, const char *label,
+                  const String &value, uint16_t valueColor) {
+  text(g, label, ox + 14, oy + y, Font::UiSm, COLOR_SUBTLE, COLOR_PANEL);
+  text(g, fitText(g, value, Font::MonoSm, w - 100).c_str(), ox + w - 14, oy + y, Font::MonoSm,
+       valueColor, COLOR_PANEL, TR_DATUM);
+}
+
+static void drawPbApCard() {
+  offscreen(MARGIN, CONTENT_Y, CARD_W, PB_CARD_H, [](TFT_eSPI &g, int16_t ox, int16_t oy) {
+    card(g, ox, oy, CARD_W, PB_CARD_H, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+    text(g, "ACCESS POINT", ox + 14, oy + 10, Font::UiSm, COLOR_SUBTLE, COLOR_PANEL);
+    g.drawFastHLine(ox + 14, oy + 27, CARD_W - 28, COLOR_EDGE);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[0], "SSID", pbSsid(), COLOR_TEXT);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[1], "ADDRESS", pbApIp(), COLOR_TEXT);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[2], "CHANNEL", String((unsigned)pbChannel()), COLOR_TEXT);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[3], "CLIENTS",
+          pbActive() ? String((unsigned)pbClients()) : String("-"),
+          pbActive() && pbClients() ? COLOR_MATRIX : COLOR_SUBTLE);
+  });
+}
+
+static void drawPbStoreCard() {
+  offscreen(COL_RIGHT_X, CONTENT_Y, CARD_W, PB_CARD_H, [](TFT_eSPI &g, int16_t ox, int16_t oy) {
+    card(g, ox, oy, CARD_W, PB_CARD_H, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+    text(g, "PORTAL LIBRARY", ox + 14, oy + 10, Font::UiSm, COLOR_SUBTLE, COLOR_PANEL);
+    g.drawFastHLine(ox + 14, oy + 27, CARD_W - 28, COLOR_EDGE);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[0], "STORE",
+          String(pbBackendName()) + " · " + String((unsigned)pbPortalCount()) + " files", COLOR_TEXT);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[1], "SERVING",
+          pbSelectedPortal().length() ? pbSelectedPortal() : String("built-in"), COLOR_CYAN);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[2], "CAPTURES",
+          String((unsigned long)pbCaptureCount()), COLOR_TEXT);
+    pbRow(g, ox, oy, CARD_W, PB_ROW_Y[3], "LAST",
+          pbLastCaptureEmail().length() ? pbLastCaptureEmail() : String("-"), COLOR_SUBTLE);
+  });
+}
+
+static void drawPbPill() {
+  offscreen(220, 13, SCREEN_W - MARGIN - 220, 22, [](TFT_eSPI &g, int16_t ox, int16_t oy) {
+    const int16_t w = SCREEN_W - MARGIN - 220;
+    Tone t;
+    if (!pbActive())           t = {"IDLE", COLOR_SUBTLE, COLOR_PANEL_HI};
+    else if (pbClients() > 0)  t = {"CAPTURING", COLOR_MATRIX, COLOR_GREEN_TINT};
+    else                       t = {"BROADCASTING", COLOR_CYAN, COLOR_CYAN_TINT};
+    useFont(g, Font::UiSm);
+    const int16_t pw = 37 + g.textWidth(t.label);
+    pill(g, ox + w - pw, oy, t.label, t.color, t.tint, COLOR_BG);
+  });
+}
+
+static void drawPbButtons() {
+  const int16_t y2 = PB_BTN_Y + PB_BTN_H + 8;
+  button(tft, 16, PB_BTN_Y, PB_BTN_W, PB_BTN_H, pbActive() ? "Stop Portal" : "Start Portal",
+         pbActive());
+  button(tft, 170, PB_BTN_Y, PB_BTN_W, PB_BTN_H, "Next Portal", false);
+  button(tft, 324, PB_BTN_Y, PB_BTN_W, PB_BTN_H, "Clear Log", false);
+  button(tft, 16, y2, PB_BTN_W, PB_BTN_H, "Dump Log", false);
+  button(tft, 170, y2, PB_BTN_W, PB_BTN_H, pbBeepEnabled() ? "Beep On" : "Beep Off",
+         pbBeepEnabled());
+  text(tft, "SSID / channel come from the", 324, y2 + 6, Font::UiSm, COLOR_SUBTLE, COLOR_BG);
+  text(tft, "console: pb ssid <name>", 324, y2 + 20, Font::MonoSm, COLOR_MUTED, COLOR_BG);
+  text(tft, "pb ch <1-13>", 324, y2 + 34, Font::MonoSm, COLOR_MUTED, COLOR_BG);
+}
+
+static void drawPb() {
+  tft.fillScreen(COLOR_BG);
+  subHeader("PortalBox");
+  drawPbPill();
+  headerRule(tft);
+  drawPbApCard();
+  drawPbStoreCard();
+  drawPbButtons();
+  text(tft, pbActive() ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
+                       : "Hold WIFI PENTESTER on the dashboard to open this screen",
+       MARGIN, 284, Font::UiSm, pbActive() ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
+  drawFooter();
+}
+
+static void tapPb(uint16_t x, uint16_t y) {
+  if (hitBack(x, y)) {
+    uiShow(Screen::Dashboard);
+    return;
+  }
+  const int16_t y2 = PB_BTN_Y + PB_BTN_H + 8;
+  if (y >= PB_BTN_Y && y < PB_BTN_Y + PB_BTN_H) {
+    if (x >= 16 && x < 16 + PB_BTN_W) {
+      if (pbActive()) pbStop(); else pbStart();
+    } else if (x >= 170 && x < 170 + PB_BTN_W) {
+      if (!pbSelectNextPortal()) Serial.println(F("[UI  ] No portal files to cycle"));
+    } else if (x >= 324 && x < 324 + PB_BTN_W) {
+      pbClearCaptures();
+    } else {
+      return;
+    }
+    drawPb();
+  } else if (y >= y2 && y < y2 + PB_BTN_H) {
+    if (x >= 16 && x < 16 + PB_BTN_W) {
+      pbDumpCaptures(Serial);
+    } else if (x >= 170 && x < 170 + PB_BTN_W) {
+      pbSetBeep(!pbBeepEnabled());
+    } else {
+      return;
+    }
+    drawPb();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Controller
 // ---------------------------------------------------------------------------
 void uiShow(Screen next) {
@@ -623,6 +755,8 @@ void uiShow(Screen next) {
   pressedCard = -1;
   seenLinkRev = linkRevision();
   seenFanRev  = fanLinkRevision();
+  seenPbRev   = pbRevision();
+  lastPbLive  = pbActive();
   nextClockMs = millis() + CLOCK_REFRESH_MS;
   nextStatsMs = millis() + STATS_REFRESH_MS;
   lastClients = linkPortalClients();
@@ -648,6 +782,7 @@ void uiShow(Screen next) {
       }
       drawFan();
       break;
+    case Screen::PortalBox: drawPb(); break;
   }
 }
 
@@ -663,6 +798,7 @@ const char *uiScreenName() {
     case Screen::Network:   return "network";
     case Screen::Setup:     return "setup";
     case Screen::Fan:       return "fan";
+    case Screen::PortalBox: return "portalbox";
   }
   return "";
 }
@@ -675,11 +811,34 @@ void uiTap(uint16_t x, uint16_t y) {
     case Screen::Network:   tapNetwork(x, y); break;
     case Screen::Setup:     tapSetup(x, y); break;
     case Screen::Fan:       tapFan(x, y); break;
+    case Screen::PortalBox: tapPb(x, y); break;
   }
 }
 
 void uiTick(uint32_t now) {
-  if (pressedCard >= 0 && now - pressedAtMs >= PRESS_FEEDBACK_MS) releaseCard();
+  // A card press keeps its 140 ms highlight, but WIFI PENTESTER waits for a
+  // hold: PortalBox must never open from a stray tap on the dashboard.
+  if (pressedCard >= 0) {
+    const uint32_t held = now - pressedAtMs;
+    if (pressedCard == (int8_t)CARD_PENTEST) {
+      if (held >= LONG_PRESS_MS && !longPressDone) {
+        longPressDone = true;
+        const int8_t card = pressedCard;
+        pressedCard = -1;
+        drawCard((size_t)card);
+        Serial.println(F("[UI  ] Held WIFI PENTESTER - opening PortalBox"));
+        uiShow(Screen::PortalBox);
+        return;
+      }
+      if (!longPressDone && !touchDown()) {  // released early: drop the highlight only
+        const int8_t card = pressedCard;
+        pressedCard = -1;
+        drawCard((size_t)card);
+      }
+    } else if (held >= PRESS_FEEDBACK_MS) {
+      releaseCard();
+    }
+  }
 
   const bool linkChanged = linkRevision() != seenLinkRev;
   seenLinkRev            = linkRevision();
@@ -711,6 +870,11 @@ void uiTick(uint32_t now) {
         drawCard(CARD_SYSTEM);
       } else if (lanScanChanged() && !lanScanRunning()) {
         drawCard(CARD_SYSTEM);  // device count
+      }
+      if (pbRevision() != seenPbRev) {
+        seenPbRev = pbRevision();
+        drawCard(CARD_PENTEST);
+        drawDashboardPill();
       }
       if (clock) {
         drawClock();
@@ -752,5 +916,25 @@ void uiTick(uint32_t now) {
       break;
     }
     case Screen::Fan: { if (fanChanged) drawFan(); break; }
+
+    case Screen::PortalBox: {
+      const bool live = pbActive();
+      if (pbRevision() != seenPbRev) {
+        seenPbRev = pbRevision();
+        drawPbPill();
+        drawPbApCard();
+        drawPbStoreCard();
+        drawFooter();
+      }
+      if (live != lastPbLive) {  // the button face follows the AP state
+        lastPbLive = live;
+        drawPbButtons();
+        tft.fillRect(MARGIN, 280, SCREEN_W - 2 * MARGIN, 20, COLOR_BG);
+        text(tft, live ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
+                       : "Hold WIFI PENTESTER on the dashboard to open this screen",
+             MARGIN, 284, Font::UiSm, live ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
+      }
+      break;
+    }
   }
 }
