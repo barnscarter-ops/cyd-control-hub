@@ -1,5 +1,7 @@
 #include "gfx.h"
 
+#include <Preferences.h>
+
 #include "theme.h"
 #include "fonts/FontMonoMd.h"
 #include "fonts/FontMonoSm.h"
@@ -9,6 +11,32 @@
 #include "fonts/FontUiXl.h"
 
 TFT_eSPI tft = TFT_eSPI();
+
+// ---------------------------------------------------------------------------
+// Orientation (landscape only: rotation 1 = USB right, 3 = 180° inverted)
+// ---------------------------------------------------------------------------
+static const char *ORIENT_NS  = "display";
+static bool        orientFlip = false;
+
+void displayBegin() {
+  Preferences prefs;
+  prefs.begin(ORIENT_NS, false);
+  orientFlip = prefs.getBool("flip", false);
+  prefs.end();
+  tft.setRotation(orientFlip ? 3 : 1);
+}
+
+bool displayFlipped() { return orientFlip; }
+
+void displayFlip() {
+  orientFlip = !orientFlip;
+  Preferences prefs;
+  prefs.begin(ORIENT_NS, false);
+  prefs.putBool("flip", orientFlip);
+  prefs.end();
+  tft.setRotation(orientFlip ? 3 : 1);
+  Serial.printf("[TFT ] Rotation -> %s\n", orientFlip ? "landscape inverted" : "landscape");
+}
 
 // ---------------------------------------------------------------------------
 // Fonts
@@ -81,6 +109,17 @@ void button(TFT_eSPI &g, int32_t x, int32_t y, int32_t w, int32_t h, const char 
   }
 }
 
+void iconButton(TFT_eSPI &g, int32_t x, int32_t y, int32_t w, int32_t h, Icon icon,
+                bool active) {
+  if (active) {
+    g.fillSmoothRoundRect(x, y, w, h, 8, COLOR_CYAN, COLOR_BG);
+    iconGlyph(g, x + w / 2, y + h / 2, icon, COLOR_BG, COLOR_CYAN);
+  } else {
+    card(g, x, y, w, h, 8, COLOR_BG, COLOR_CYAN);
+    iconGlyph(g, x + w / 2, y + h / 2, icon, COLOR_CYAN, COLOR_BG);
+  }
+}
+
 void signalBars(TFT_eSPI &g, int32_t x, int32_t y, uint8_t level, uint16_t on, uint16_t off) {
   for (uint8_t i = 0; i < 4; i++) {
     const int16_t h = 4 + i * 3;
@@ -147,6 +186,17 @@ void iconGlyph(TFT_eSPI &g, int32_t cx, int32_t cy, Icon icon, uint16_t fg, uint
     case Icon::Plus:
       stroke(g, cx - 7, cy, cx + 7, cy, fg, bg);
       stroke(g, cx, cy - 7, cx, cy + 7, fg, bg);
+      break;
+
+    case Icon::Rotate:
+      // Two circular arrows. Angles are clockwise from 6 o'clock.
+      g.drawSmoothArc(cx, cy, 9, 7, 135, 225, fg, bg, false);  // top arc
+      g.drawSmoothArc(cx, cy, 9, 7, 315, 45, fg, bg, false);   // bottom arc
+      // Arrowheads at the clockwise-travelling ends.
+      stroke(g, cx + 9, cy - 9, cx + 6, cy - 6, fg, bg);  // top-right (points right)
+      stroke(g, cx + 6, cy - 6, cx + 9, cy - 3, fg, bg);
+      stroke(g, cx - 9, cy + 9, cx - 6, cy + 6, fg, bg);  // bottom-left (points left)
+      stroke(g, cx - 6, cy + 6, cx - 9, cy + 3, fg, bg);
       break;
   }
 }

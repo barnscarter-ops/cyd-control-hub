@@ -67,7 +67,7 @@ static void run(String cmd) {
 
   if (cmd == "help") {
     Serial.println(F("[CON ] status | snap | tap <x> <y> | screen <dashboard|network|setup|fan>"));
-    Serial.println(F("[CON ] scan | portal | close | reboot"));
+    Serial.println(F("[CON ] scan | portal | close | reboot | flip"));
     Serial.println(F("[CON ] wifi add <ssid> <pass> | wifi list | wifi forget"));
     Serial.println(F("[CON ] fan host <ip-or-name> [port]"));
     Serial.println(F("[CON ] screen portalbox | pb start|stop|ssid <name>|ch <n>"));
@@ -112,6 +112,9 @@ static void run(String cmd) {
     linkForgetAll();
   } else if (cmd == "reboot") {
     ESP.restart();
+  } else if (cmd == "flip") {
+    displayFlip();
+    uiShow(uiScreen());
   } else if (cmd == "pb start") {
     pbStart();
   } else if (cmd == "pb stop") {

@@ -15,7 +15,8 @@
 static const uint32_t CLOCK_REFRESH_MS   = 1000;
 static const uint32_t STATS_REFRESH_MS   = 5000;
 static const uint32_t PRESS_FEEDBACK_MS  = 140;
-static const uint32_t LONG_PRESS_MS       = 600;   // hold that opens PortalBox
+static const uint32_t LONG_PRESS_MS      = 1500;  // final hold in the tap-tap-hold unlock
+static const uint32_t TAP_WINDOW_MS      = 400;   // max gap between the two taps
 static const uint32_t LAN_STALE_MS       = 60000;
 
 static const int16_t  TABLE_Y     = 128;
@@ -32,6 +33,10 @@ static const int16_t BTN_ADD_W     = 96;
 static const int16_t BTN_ADD_X     = SCREEN_W - MARGIN - BTN_ADD_W;
 static const int16_t BTN_SCAN_W    = 92;
 static const int16_t BTN_SCAN_X    = BTN_ADD_X - 8 - BTN_SCAN_W;
+static const int16_t BTN_FLIP_W    = 30;
+static const int16_t BTN_FLIP_X    = BTN_SCAN_X - 8 - BTN_FLIP_W;
+static const int16_t DASH_FLIP_W   = 28;
+static const int16_t DASH_FLIP_X   = 336;
 
 static Screen   screen          = Screen::Dashboard;
 static uint32_t seenLinkRev     = 0;
@@ -45,6 +50,8 @@ static uint32_t tableSig        = 0;
 static bool     lastScanRunning = false;
 static uint8_t  lastClients     = 0;
 static bool     longPressDone   = false;  // the current card press already fired its hold action
+static uint8_t  pentestTaps     = 0;      // taps in the current tap-tap-hold sequence
+static uint32_t pentestTapUpMs  = 0;      // when the last tap in the sequence was released
 
 // ---------------------------------------------------------------------------
 // Off-screen rendering
@@ -198,7 +205,7 @@ static CardValue cardValue(size_t i) {
       if (pbActive())
         return {"LIVE", COLOR_MATRIX,
                 String(pbClients()) + (pbClients() == 1 ? " client" : " clients")};
-      return {"READY", COLOR_CYAN, "Hold to open"};
+      return {"READY", COLOR_CYAN, "Locked"};
   }
   switch (linkState()) {
     case LinkState::Online:
@@ -262,6 +269,8 @@ static void drawClock() {
                              COLOR_BG, MR_DATUM);
     signalBars(g, ox + w - tw - 30, oy + HEADER_H / 2 + 7, signalLevel(), COLOR_CYAN, COLOR_EDGE);
   });
+  // Drawn after the clock sprite every refresh so the clock redraw never covers it.
+  iconButton(tft, DASH_FLIP_X, BTN_Y, DASH_FLIP_W, BTN_H, Icon::Rotate, displayFlipped());
 }
 
 static void drawDashboard() {
@@ -276,6 +285,11 @@ static void drawDashboard() {
 }
 
 static void tapDashboard(uint16_t x, uint16_t y) {
+  if (y < HEADER_H && x >= DASH_FLIP_X && x < DASH_FLIP_X + DASH_FLIP_W) {
+    displayFlip();
+    uiShow(Screen::Dashboard);
+    return;
+  }
   for (size_t i = 0; i < CARD_COUNT; i++) {
     const CardDef &c = CARDS[i];
     if (x >= c.x && x < c.x + CARD_W && y >= c.y && y < c.y + CARD_H) {
@@ -402,6 +416,7 @@ static uint8_t pageCount() {
 
 static void drawNetworkButtons() {
   const bool scanning = lanScanRunning();
+  iconButton(tft, BTN_FLIP_X, BTN_Y, BTN_FLIP_W, BTN_H, Icon::Rotate, displayFlipped());
   button(tft, BTN_SCAN_X, BTN_Y, BTN_SCAN_W, BTN_H, scanning ? "Scanning" : "Rescan", scanning);
   button(tft, BTN_ADD_X, BTN_Y, BTN_ADD_W, BTN_H, "Add Wi-Fi", false);
 }
@@ -515,6 +530,9 @@ static void drawNetwork() {
 static void tapNetwork(uint16_t x, uint16_t y) {
   if (hitBack(x, y)) {
     uiShow(Screen::Dashboard);
+  } else if (y < HEADER_H && x >= BTN_FLIP_X && x < BTN_FLIP_X + BTN_FLIP_W) {
+    displayFlip();
+    uiShow(Screen::Network);
   } else if (y < HEADER_H && x >= BTN_SCAN_X && x < BTN_SCAN_X + BTN_SCAN_W) {
     if (!lanScanRunning()) {
       tablePage = 0;
@@ -705,11 +723,15 @@ static void drawPbButtons() {
 // Status line plus the reminder that SSID and channel are console settings.
 static void drawPbHint() {
   tft.fillRect(MARGIN, 280, SCREEN_W - 2 * MARGIN, 20, COLOR_BG);
-  text(tft, pbActive() ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
-                       : "Hold WIFI PENTESTER on the dashboard to open this screen",
-       MARGIN, 284, Font::UiSm, pbActive() ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
-  text(tft, "pb ssid | pb ch on console", SCREEN_W - MARGIN, 284, Font::MonoSm, COLOR_MUTED,
-       COLOR_BG, TR_DATUM);
+  const char *hint  = pbActive() ? "AP live · hub Wi-Fi, LAN scan and fan polling paused"
+                                 : "AP idle — start it when you're ready";
+  const char *right = "pb ssid | pb ch on console";
+  useFont(tft, Font::MonoSm);
+  const int16_t rightW = tft.textWidth(right);
+  const int16_t leftW  = SCREEN_W - 2 * MARGIN - rightW - 16;
+  text(tft, fitText(tft, hint, Font::UiSm, leftW).c_str(), MARGIN, 284, Font::UiSm,
+       pbActive() ? COLOR_AMBER : COLOR_SUBTLE, COLOR_BG);
+  text(tft, right, SCREEN_W - MARGIN, 284, Font::MonoSm, COLOR_MUTED, COLOR_BG, TR_DATUM);
 }
 
 static void drawPb() {
@@ -824,23 +846,37 @@ void uiTap(uint16_t x, uint16_t y) {
 }
 
 void uiTick(uint32_t now) {
-  // A card press keeps its 140 ms highlight, but WIFI PENTESTER waits for a
-  // hold: PortalBox must never open from a stray tap on the dashboard.
+  // WIFI PENTESTER opens on tap-tap-hold: two quick taps then a long press.
+  // A stray tap, a single tap, or a bare hold never opens it.
   if (pressedCard >= 0) {
     const uint32_t held = now - pressedAtMs;
     if (pressedCard == (int8_t)CARD_PENTEST) {
-      if (held >= LONG_PRESS_MS && !longPressDone) {
-        longPressDone = true;
+      if (touchDown()) {
+        if (held >= LONG_PRESS_MS && !longPressDone) {
+          longPressDone = true;
+          if (pentestTaps >= 2) {  // tap-tap-hold completed
+            const int8_t card = pressedCard;
+            pressedCard = -1;
+            pentestTaps = 0;
+            drawCard((size_t)card);
+            Serial.println(F("[UI  ] tap-tap-hold on WIFI PENTESTER - opening PortalBox"));
+            uiShow(Screen::PortalBox);
+            return;
+          }
+          // Held long enough but with too few taps: keep the highlight, don't open.
+        }
+      } else {  // released
+        if (held < LONG_PRESS_MS) {
+          // A quick release counts as a tap in the sequence.
+          if (pentestTaps == 0 || now - pentestTapUpMs > TAP_WINDOW_MS) pentestTaps = 1;
+          else if (pentestTaps < 2) pentestTaps++;
+          pentestTapUpMs = now;
+        } else {
+          pentestTaps = 0;  // a full hold that didn't unlock resets the sequence
+        }
         const int8_t card = pressedCard;
         pressedCard = -1;
-        drawCard((size_t)card);
-        Serial.println(F("[UI  ] Held WIFI PENTESTER - opening PortalBox"));
-        uiShow(Screen::PortalBox);
-        return;
-      }
-      if (!longPressDone && !touchDown()) {  // released early: drop the highlight only
-        const int8_t card = pressedCard;
-        pressedCard = -1;
+        longPressDone = false;
         drawCard((size_t)card);
       }
     } else if (held >= PRESS_FEEDBACK_MS) {

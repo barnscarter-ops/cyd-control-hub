@@ -72,5 +72,11 @@ bool touchTapped(uint32_t now, uint16_t &x, uint16_t &y) {
   }
   if (touchWasDown || !tft.getTouch(&x, &y)) return false;
   touchWasDown = true;
+  // The calibration is captured for rotation 1 and TFT_eSPI does not re-map touch
+  // after setRotation, so mirror the point for a 180° flip.
+  if (displayFlipped()) {
+    x = SCREEN_W - 1 - x;
+    y = SCREEN_H - 1 - y;
+  }
   return true;
 }

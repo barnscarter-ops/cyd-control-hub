@@ -13,11 +13,11 @@ behavior: nothing here has been exercised on hardware yet.
 
 | Action | Result |
 | --- | --- |
-| Tap `WIFI PENTESTER` | Highlight only (140 ms). The toolkit never opens from a stray tap. |
-| Hold `WIFI PENTESTER` for 600 ms | Opens the `PortalBox` screen. |
+| Tap `WIFI PENTESTER` | Highlight only. A stray tap never opens the toolkit. |
+| Tap-tap-hold `WIFI PENTESTER` | Two taps within 400 ms, then a 1500 ms hold, opens the `PortalBox` screen. Any other pattern only flashes the card. |
 | Serial console | `screen portalbox` |
 
-The card's meta line reads `Hold to open` while the AP is down and
+The card's meta line reads `Locked` while the AP is down and
 `<n> clients` while it is up; the value line reads `READY` or `LIVE`.
 
 ## Radio ownership
@@ -76,9 +76,14 @@ bug in its own partition table.)
 
 Capture rows are `epoch,ip,portal,"email","password","extra"` with commas,
 quotes, and newlines sanitized out of the submitted values. Any form field is
-accepted: email-ish and password-ish names map to the email and password
-columns and everything else is kept in the extra column, so a cloned page's
-field names do not have to match the Marauder contract. `epoch` is `0` until NTP
+accepted: email-ish (`email`/`user`/`login`/`account`) and password-ish
+(`pass`/`pwd`/`pin`/`code`) names map to the email and password columns and
+everything else is kept in the extra column, so a cloned page's field names do
+not have to match the Marauder contract. The email/password match is decided by
+whether a field *name* was seen, not whether it held a value — an empty
+submission to an email field still lands in the email column (empty), and only
+a page with no email-ish or password-ish field at all falls back to dumping
+everything into the email column. `epoch` is `0` until NTP
 has set the clock, which needs a station connection, so rows captured while the
 AP is up are untimed unless the hub was online before the portal started.
 

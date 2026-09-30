@@ -29,7 +29,7 @@ void setup() {
                 ESP.getChipRevision(), ESP.getCpuFreqMHz(), ESP.getFreeHeap());
 
   tft.init();
-  tft.setRotation(1);  // landscape 480x320, USB on the right
+  displayBegin();  // landscape 480x320 (USB right) or 180° inverted; persisted in NVS
   digitalWrite(TFT_BL, !TFT_BACKLIGHT_ON);  // init() turns it on; stay dark until drawn
   tft.fillScreen(COLOR_BG);
   Serial.printf("[TFT ] ST7796 ready: %dx%d\n", tft.width(), tft.height());

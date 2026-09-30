@@ -4,11 +4,11 @@
 
 ## Where the firmware is
 
-The dashboard keeps its four cards. `WIFI PENTESTER` no longer does nothing on a tap: holding it for 600 ms opens a new `PortalBox` screen, and a short tap only flashes the card. PortalBox is the captive-portal toolkit from `../portalbox`, ported into this firmware as `src/portalbox.*` — own access point, wildcard DNS, `/get` capture contract, portal library and capture log on the microSD card with a LittleFS fallback, and the same screen-level controls the original had (start/stop, next portal, clear, dump, beep).
+The dashboard keeps its four cards. `WIFI PENTESTER` opens a `PortalBox` screen on a **tap-tap-hold** gesture (two taps within 400 ms, then a 1500 ms hold); any other pattern only flashes the card, and the card's meta line reads `Locked` so the gesture is not printed on screen. PortalBox is the captive-portal toolkit from `../portalbox`, ported into this firmware as `src/portalbox.*` — own access point, wildcard DNS, `/get` capture contract, portal library and capture log on the microSD card with a LittleFS fallback, and the same screen-level controls the original had (start/stop, next portal, clear, dump, beep).
 
 While that access point is up the hub's own link is `LinkState::Suspended`: the station radio is off, the setup portal refuses to open, the LAN scan stops, and fan polling pauses. Stopping the portal restores the link and its state machine. The contract is written down in `design/architecture/portalbox-v1.md`.
 
-The Server Fan screen and its asynchronous client are unchanged from the previous handoff.
+The display is landscape-only but flippable 180° from a rotate-icon button on the Dashboard header and the Network header (and the `flip` console command), persisted in NVS namespace `display`. The Server Fan screen and its asynchronous client are unchanged from the previous handoff.
 
 ## First bench run — 2026-09-30
 
@@ -34,17 +34,33 @@ Arduino's `LittleFS.begin()` looks for a partition labelled `spiffs` by default,
 
 `esp_core_dump_flash: No core dump partition found` at boot is expected noise: this table has no coredump partition, so post-mortem backtraces are not saved to flash.
 
-## Next bench work
+## Second bench run — 2026-09-30 (full loop proven)
 
-1. Re-flash the fixed firmware. Order matters: `pio run -t uploadfs` first, so the pages in `data/portals/` (`Default.html`, `Airport.html`) land in LittleFS, then `pio run -t upload`, because the upload resets the board and that reset is when the flash-to-card sync runs. Expect `[PB  ] Card seeded with ...` lines, then `portals=2` with both page names, the card size, and flash usage.
-2. Confirm the page library is real: `pb portal list` should print the store, page count, used/total space, the served page, and each page with its size. **Sync Pages** on the device and **Next Portal** should both work, and re-uploading `data/` must reach a card that already has pages on it.
-3. Hold the WIFI PENTESTER card and confirm the screen opens on a hold and not on a tap.
-4. Start the portal, join `Free WiFi` from a phone, and confirm the login page pops by itself. Submit a test entry, then check the counter, the last-email line, and `pb capture dump`.
-5. Stop the portal and confirm the hub rejoins its network, the LAN scan runs again, and the fan card returns to live values.
-6. Only then set `pb ssid` / `pb ch` for real use, and bench-measure the speaker pin before enabling the beep.
+Flashed over USB serial (COM23, then COM24 after a replug) with `uploadfs` then `upload`. Everything in the previous "unverified" list has now been exercised on hardware:
 
-Portal cloning (`pb clone <url> [Name.html]`) needs the hub online, so join a network first (`wifi add <ssid> <pass>` or the Setup screen), run the clone, then start the portal. Target a simple form-based splash page for the first try; a JavaScript-heavy single-page portal will render from its saved assets but may not behave identically once the AP has no internet behind it.
+| Claim | Evidence |
+| --- | --- |
+| Portal pages seed from flash to card | `portals=4` after the card already held `Airport.html`/`Default.html` from the first run — no re-seed line, matching the sync's never-overwrite rule |
+| Page cloning works online | `[PB ] Cloned 773 B with 1 asset(s)` (Smoke.html from example.com) and `[PB ] Cloned 1448 B with 0 asset(s)` (Form.html from httpbin.org/forms/post) |
+| AP serves the selected page | `[PB ] Portal AP up: ssid="Free WiFi" ch=6 ip=192.168.4.1 portal=Form.html` |
+| A phone joins and submits | `[PB ] Capture 1 from 192.168.4.2 portal=Form.html` and `Capture 2 from 192.168.4.3` |
+| Capture log is real | `pb capture dump` printed `1790778400,192.168.4.2,Form.html,...` — `epoch` non-zero because NTP had set the clock while online before `pb start`, exactly as designed |
+| Radio handover back works | After `pb stop`: `State -> SUSPENDED` → `Portal AP down` → `State -> SEARCHING` → `ONLINE` on the saved network |
+| Tap-tap-hold opens PortalBox | `[UI ] tap-tap-hold on WIFI PENTESTER - opening PortalBox` after several quick taps + hold; single taps only logged `Card tapped` |
+| 180° flip works | `[TFT ] Rotation -> landscape inverted` then back to `landscape`; `tap 350 24` toggled it both ways |
 
-## Still unverified
+One cosmetic `esp_wifi_get_mac failed with 12289` appeared during the `pb stop` handover and recovered to ONLINE immediately — radio-mode-switch noise, not a fault.
 
-Nothing in this feature has been exercised past initialization: no access point has been started, no page served, no client joined, no capture written, no portal file listed, and the hold gesture has not been touched. The radio handover and the resume path are unexercised, and the Server Fan screen's live API exchange is still unverified from the previous handoff.
+## Fixed this run
+
+1. **`/get` field mapping.** `handleGet()` matched email-ish/password-ish fields by testing `!email.length()`, so an *empty* submission to an email field left `email` empty and the "unknown shape" fallback dumped every other field into the email column. It now tracks `sawEmail`/`sawPass` booleans (a field *name* was seen, even if empty) and only falls back when neither was seen. Documented in `portalbox-v1.md`.
+2. **Tap-tap-hold gesture.** Replaced the old 600 ms hold with the hidden tap-tap-hold sequence above; `LONG_PRESS_MS` is 1500 ms and `TAP_WINDOW_MS` is 400 ms.
+3. **PortalBox hint overlap.** The bottom status line collided with the `pb ssid | pb ch` reminder; it now `fitText`s the status to the space left of the reminder.
+4. **Display flip.** `displayBegin()`/`displayFlip()` in `gfx.*`, touch mirrored in `touch_input.cpp` for the 180° rotation, rotate-icon buttons on Dashboard + Network, `flip` console command.
+
+## Still unverified / next bench work
+
+- **Touch alignment after flip has not been physically confirmed.** The mirror transform is correct by construction (`x = SCREEN_W-1-x`, `y = SCREEN_H-1-y`) and the button/command both toggle rotation, but the resistive panel mapping after a real 180° rotation still needs a finger test: flip, then confirm the back button and cards register in the right places.
+- The speaker pin is still unmeasured — keep beep off.
+- The Server Fan screen's live API exchange remains unverified from the previous handoff.
+- `pb ssid` / `pb ch` have not been set for real use; the AP has only run as the default `Free WiFi`.
