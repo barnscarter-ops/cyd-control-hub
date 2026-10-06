@@ -297,6 +297,9 @@ static void tapDashboard(uint16_t x, uint16_t y) {
       pressedCard   = (int8_t)i;
       pressedAtMs   = millis();
       longPressDone = false;
+      // Stale taps expire: the next press must start within the window of the
+      // last release, so tap-tap-hold has to be one continuous motion.
+      if (i == CARD_PENTEST && millis() - pentestTapUpMs > TAP_WINDOW_MS) pentestTaps = 0;
       drawCard(i);
       return;
     }

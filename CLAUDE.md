@@ -37,6 +37,7 @@ Single env: `cyd35`.
 - Board is the LCDWiki **E32R35T** (ST7796U + XPT2046 resistive touch). Pins: SCLK 14, MOSI 13, MISO 12 (HSPI, `USE_HSPI_PORT`), CS 15, DC 2, RST on EN (`TFT_RST=-1`), BL 27 (active HIGH). The generic CYD pinout (18/19/23) gives a black screen on this board.
 - Touch shares the TFT SPI bus: `TOUCH_CS` 33, `TOUCH_IRQ` 36 (active LOW while pressed, input-only). Reference: https://www.lcdwiki.com/3.5inch_ESP32-32E_Display
 - `TFT_WIDTH/HEIGHT` are the panel's portrait-native 320/480; `setRotation(1)` gives 480x320.
+- Orientation is landscape only, but flippable 180°: `displayBegin()` (replaces the old `setRotation(1)` call) reads a `flip` bool from NVS namespace `display` and applies `setRotation(3)` when flipped. `displayFlip()` toggles + persists it. Because TFT_eSPI's touch calibration is captured for rotation 1 and is **not** re-mapped by `setRotation`, `touchTapped()` mirrors the point (`x = SCREEN_W-1-x`, `y = SCREEN_H-1-y`) when `displayFlipped()`. The flip is exposed as a rotate-icon `iconButton` on the Dashboard header (next to the clock) and the Network header, plus the `flip` console command.
 - `SPI_READ_FREQUENCY` must stay at 10–14 MHz: at 6 MHz and 20 MHz readback (`readRect`, `readPixel`) corrupts bits. Anything that reads pixels depends on this.
 - `tft.init()` turns the backlight on itself; `setup()` blanks it until the first frame is drawn.
 
@@ -47,7 +48,7 @@ Single env: `cyd35`.
 - Colors and geometry come from `include/theme.h`. Cards are `COLOR_PANEL` with a 1px `COLOR_EDGE` border, radius 10; accent is `COLOR_CYAN`; status colors are `COLOR_MATRIX` (good), `COLOR_AMBER` (pending), `COLOR_RED` (fault).
 - Anything that redraws after the first frame goes through `offscreen(x, y, w, h, fn)` in `ui.cpp`: it renders to a temporary sprite and pushes it in one go (no flicker), falling back to direct drawing if heap is short. Keep sprites around row/card size — no full-screen sprites (not enough RAM).
 - Dashboard cards are the `CARDS[]` table; their live values come from `cardValue(i)`. Card taps highlight for 140 ms, then act in `releaseCard()`.
-- `WIFI PENTESTER` (`CARD_PENTEST`) is the one hold gesture: `uiTick()` keeps its highlight instead of releasing at 140 ms and opens `Screen::PortalBox` after `LONG_PRESS_MS` (600 ms) while `touchDown()` is still true. A short tap only drops the highlight.
+- `WIFI PENTESTER` (`CARD_PENTEST`) opens on a **tap-tap-hold** gesture: two taps within `TAP_WINDOW_MS` (400 ms), then a hold of `LONG_PRESS_MS` (1500 ms). `uiTick()` counts quick releases as taps and opens `Screen::PortalBox` only when the hold fires with two prior taps; any other pattern (stray tap, single tap + hold, bare hold) just flashes the card. The card's meta line reads `Locked` so the gesture is not printed on screen. The sequence is deliberate, not stateful: a press that starts more than `TAP_WINDOW_MS` after the last tap release resets the tap count. Put any future hidden-gesture card in that same branch.
 
 ## Wi-Fi
 
@@ -69,7 +70,7 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|clone <url> [Name.html]|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|clone <url> [Name.html]|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `flip`, `reboot`.
 
 ## Loop rules
 
