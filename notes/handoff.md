@@ -64,3 +64,10 @@ One cosmetic `esp_wifi_get_mac failed with 12289` appeared during the `pb stop` 
 - The speaker pin is still unmeasured — keep beep off.
 - The Server Fan screen's live API exchange remains unverified from the previous handoff.
 - `pb ssid` / `pb ch` have not been set for real use; the AP has only run as the default `Free WiFi`.
+
+## 2026-10-13
+
+- Flashed CH-01 over USB (CH340, COM6) with commit `f908ba8` (BENCH SUPPLY card replaces GARAGE CTRL). Upload verified (4/4 hashes); boot log reaches `[BOOT] Ready`; serial `tap 350 110` logs `Card tapped: BENCH SUPPLY` and `Screen -> bench`.
+- None of the three saved Wi-Fi networks was in range, so the setup portal opened (`ControlHub-XXXX`). Owner to add the home network from a phone.
+- `bench host <ip> [port]` stays unset until the workstand bench meter is built and online.
+- On this laptop, run PlatformIO uploads with `PYTHONIOENCODING=utf-8 PYTHONUTF8=1`; without it the upload hangs (esptool's Unicode progress output crashes PlatformIO's echo when output is redirected). `tools/snap.py` needs Pillow, which is not installed here.
