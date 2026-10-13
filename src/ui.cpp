@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "gfx.h"
+#include "bench_link.h"
 #include "fan_link.h"
 #include "lan_scan.h"
 #include "portalbox.h"
@@ -41,6 +42,7 @@ static const int16_t DASH_FLIP_X   = 336;
 static Screen   screen          = Screen::Dashboard;
 static uint32_t seenLinkRev     = 0;
 static uint32_t seenFanRev      = 0;
+static uint32_t seenBenchRev    = 0;
 static uint32_t nextClockMs     = 0;
 static uint32_t nextStatsMs     = 0;
 static int8_t   pressedCard     = -1;
@@ -170,7 +172,7 @@ struct CardDef {
 
 static const CardDef CARDS[] = {
     {"SERVER FAN", "Rack cooling", Icon::Power, COL_LEFT_X, ROW_TOP_Y},
-    {"GARAGE CTRL", "Main door", Icon::Garage, COL_RIGHT_X, ROW_TOP_Y},
+    {"BENCH SUPPLY", "Workstand PSU", Icon::Bench, COL_RIGHT_X, ROW_TOP_Y},
     {"WIFI PENTESTER", "Audit toolkit", Icon::Wifi, COL_LEFT_X, ROW_BOT_Y},
     {"SYSTEM STATUS", "Network & devices", Icon::Pulse, COL_RIGHT_X, ROW_BOT_Y},
 };
@@ -200,7 +202,20 @@ static CardValue cardValue(size_t i) {
       if (fanLinkHasSnapshot()) meta = fanLinkMode() + " / " + String(fanLinkDutyPct(), 0) + "%";
       return {value, color, meta};
     }
-    case 1: return {"CLOSED", COLOR_MATRIX, "Locked"};
+    case 1: {
+      uint16_t color = COLOR_AMBER;
+      if (benchLinkState() == BenchLinkState::Online && benchLinkMeterOk() && !benchLinkFailsafe())
+        color = COLOR_MATRIX;
+      if (benchLinkState() == BenchLinkState::Offline || benchLinkState() == BenchLinkState::Fault ||
+          benchLinkState() == BenchLinkState::Stale ||
+          (benchLinkHasSnapshot() && !benchLinkMeterOk()) ||
+          (benchLinkHasSnapshot() && benchLinkFailsafe())) color = COLOR_RED;
+      const String value = benchLinkState() == BenchLinkState::Online && benchLinkMeterOk()
+                                ? String(benchLinkVolts(), 1) + " V" : benchLinkLabel();
+      String meta = "Workstand PSU";
+      if (benchLinkHasSnapshot()) meta = String(benchLinkAmps(), 2) + " A";
+      return {value, color, meta};
+    }
     case 2:
       if (pbActive())
         return {"LIVE", COLOR_MATRIX,
@@ -232,7 +247,7 @@ static void drawCard(size_t i) {
     g.drawFastHLine(ox + 14, oy + 60, CARD_W - 28, COLOR_EDGE);
 
     // Cards that open on a tap get a chevron; WIFI PENTESTER opens on a hold.
-    const bool    nav    = i == CARD_SYSTEM || i == 0;
+    const bool    nav    = i == CARD_SYSTEM || i == 0 || i == 1;
     const int16_t metaR  = CARD_W - 14 - (nav ? 16 : 0);
     if (nav) chevron(g, ox + CARD_W - 18, oy + CARD_H - 22, COLOR_CYAN, fill);
 
@@ -315,6 +330,8 @@ static void releaseCard() {
     uiShow(needsSetup ? Screen::Setup : Screen::Network);
   } else if (i == 0) {
     uiShow(Screen::Fan);
+  } else if (i == 1) {
+    uiShow(Screen::Bench);
   } else {
     drawCard(i);
   }
@@ -407,6 +424,85 @@ static void tapFan(uint16_t x, uint16_t y) {
     else if (x >= 260 && x < 448) fanLinkSetManual(fanDutyPct);
     drawFan();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bench Supply screen (read-only: v1 of the bench-supply API is monitor-only)
+// ---------------------------------------------------------------------------
+static uint16_t benchStateColor() {
+  if (benchLinkState() == BenchLinkState::Online && benchLinkMeterOk() && !benchLinkFailsafe())
+    return COLOR_MATRIX;
+  if (benchLinkState() == BenchLinkState::Requesting) return COLOR_CYAN;
+  if (benchLinkState() == BenchLinkState::NotConfigured) return COLOR_AMBER;
+  return COLOR_RED;
+}
+
+static void drawBench() {
+  tft.fillScreen(COLOR_BG);
+  subHeader("Bench Supply");
+  headerRule(tft);
+
+  const String endpoint = benchLinkHost().length() ? benchLinkHost() : "console: bench host <ip> [port]";
+  text(tft, fitText(tft, endpoint, Font::MonoSm, 260).c_str(), SCREEN_W - MARGIN, 24,
+       Font::MonoSm, COLOR_SUBTLE, COLOR_BG, MR_DATUM);
+  text(tft, benchLinkLabel(), MARGIN, 70, Font::UiLg, benchStateColor(), COLOR_BG, ML_DATUM);
+
+  String activity;
+  if (benchLinkRequestActive()) activity = "sending";
+  if (!activity.length() && benchLinkHasSnapshot())
+    activity = "age " + String(benchLinkAgeMs(millis()) / 1000) + "s";
+  text(tft, activity.c_str(), SCREEN_W - MARGIN, 70, Font::MonoSm, COLOR_SUBTLE, COLOR_BG,
+       MR_DATUM);
+
+  String detail = benchLinkError();
+  if (!detail.length() && benchLinkHasSnapshot() && benchLinkFailsafe())
+    detail = "Failsafe: fan forced to 100%";
+  text(tft, fitText(tft, detail, Font::UiSm, SCREEN_W - 2 * MARGIN).c_str(), MARGIN, 94,
+       Font::UiSm, detail.length() ? COLOR_RED : COLOR_SUBTLE, COLOR_BG, ML_DATUM);
+
+  const bool haveMeter = benchLinkHasSnapshot() && benchLinkMeterOk();
+  const int16_t panelY = 108, panelH = 66, panelW = SCREEN_W - 2 * MARGIN;
+  card(tft, MARGIN, panelY, panelW, panelH, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+  const char *labels[4] = {"VOLTS", "AMPS", "WATTS", "mAh"};
+  String values[4] = {
+      haveMeter ? String(benchLinkVolts(), 2) + " V" : "-",
+      haveMeter ? String(benchLinkAmps(), 3) + " A" : "-",
+      haveMeter ? String(benchLinkWatts(), 1) + " W" : "-",
+      haveMeter ? String(benchLinkMah(), 0) : "-",
+  };
+  const int16_t colW = panelW / 4;
+  for (int i = 0; i < 4; i++) {
+    if (i) tft.drawFastVLine(MARGIN + i * colW, panelY + 12, panelH - 24, COLOR_EDGE);
+    const int16_t x = MARGIN + i * colW + 10;
+    text(tft, labels[i], x, panelY + 11, Font::UiSm, COLOR_SUBTLE, COLOR_PANEL);
+    text(tft, fitText(tft, values[i], Font::MonoMd, colW - 18).c_str(), x, panelY + 34,
+         Font::MonoMd, COLOR_TEXT, COLOR_PANEL);
+  }
+
+  const int16_t panel2Y = panelY + panelH + 10, panel2H = 66;
+  card(tft, MARGIN, panel2Y, panelW, panel2H, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+  const bool haveSnapshot = benchLinkHasSnapshot();
+  const char *labels2[2] = {"AIR TEMP", "FAN"};
+  String values2[2] = {
+      haveSnapshot && benchLinkAirValid() ? String(benchLinkAirC(), 1) + " C" : "-",
+      haveSnapshot
+          ? (benchLinkFanOn()
+                 ? String(benchLinkFanDutyPct(), 0) + "% " + String(benchLinkFanRpm()) + " rpm"
+                 : "OFF")
+          : "-",
+  };
+  const int16_t colW2 = panelW / 2;
+  for (int i = 0; i < 2; i++) {
+    if (i) tft.drawFastVLine(MARGIN + i * colW2, panel2Y + 12, panel2H - 24, COLOR_EDGE);
+    const int16_t x = MARGIN + i * colW2 + 10;
+    text(tft, labels2[i], x, panel2Y + 11, Font::UiSm, COLOR_SUBTLE, COLOR_PANEL);
+    text(tft, fitText(tft, values2[i], Font::MonoMd, colW2 - 18).c_str(), x, panel2Y + 34,
+         Font::MonoMd, COLOR_TEXT, COLOR_PANEL);
+  }
+}
+
+static void tapBench(uint16_t x, uint16_t y) {
+  if (hitBack(x, y)) uiShow(Screen::Dashboard);
 }
 
 // ---------------------------------------------------------------------------
@@ -788,6 +884,7 @@ void uiShow(Screen next) {
   pressedCard = -1;
   seenLinkRev = linkRevision();
   seenFanRev  = fanLinkRevision();
+  seenBenchRev = benchLinkRevision();
   seenPbRev   = pbRevision();
   lastPbLive  = pbActive();
   nextClockMs = millis() + CLOCK_REFRESH_MS;
@@ -815,6 +912,7 @@ void uiShow(Screen next) {
       }
       drawFan();
       break;
+    case Screen::Bench: drawBench(); break;
     case Screen::PortalBox: drawPb(); break;
   }
 }
@@ -831,6 +929,7 @@ const char *uiScreenName() {
     case Screen::Network:   return "network";
     case Screen::Setup:     return "setup";
     case Screen::Fan:       return "fan";
+    case Screen::Bench:     return "bench";
     case Screen::PortalBox: return "portalbox";
   }
   return "";
@@ -844,6 +943,7 @@ void uiTap(uint16_t x, uint16_t y) {
     case Screen::Network:   tapNetwork(x, y); break;
     case Screen::Setup:     tapSetup(x, y); break;
     case Screen::Fan:       tapFan(x, y); break;
+    case Screen::Bench:     tapBench(x, y); break;
     case Screen::PortalBox: tapPb(x, y); break;
   }
 }
@@ -891,6 +991,8 @@ void uiTick(uint32_t now) {
   seenLinkRev            = linkRevision();
   const bool fanChanged  = fanLinkRevision() != seenFanRev;
   seenFanRev             = fanLinkRevision();
+  const bool benchChanged = benchLinkRevision() != seenBenchRev;
+  seenBenchRev            = benchLinkRevision();
 
   // A portal that opened on its own (no network found) takes over the screen;
   // when it closes, leave the setup screen.
@@ -912,6 +1014,7 @@ void uiTick(uint32_t now) {
   switch (screen) {
     case Screen::Dashboard: {
       if (fanChanged) drawCard(0);
+      if (benchChanged) drawCard(1);
       if (linkChanged) {
         drawDashboardPill();
         drawCard(CARD_SYSTEM);
@@ -963,6 +1066,7 @@ void uiTick(uint32_t now) {
       break;
     }
     case Screen::Fan: { if (fanChanged) drawFan(); break; }
+    case Screen::Bench: { if (benchChanged) drawBench(); break; }
 
     case Screen::PortalBox: {
       const bool live = pbActive();

@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 #include "gfx.h"
+#include "bench_link.h"
 #include "fan_link.h"
 #include "lan_scan.h"
 #include "portalbox.h"
@@ -69,7 +70,7 @@ static void run(String cmd) {
     Serial.println(F("[CON ] status | snap | tap <x> <y> | screen <dashboard|network|setup|fan>"));
     Serial.println(F("[CON ] scan | portal | close | reboot | flip"));
     Serial.println(F("[CON ] wifi add <ssid> <pass> | wifi list | wifi forget"));
-    Serial.println(F("[CON ] fan host <ip-or-name> [port]"));
+    Serial.println(F("[CON ] fan host <ip-or-name> [port] | bench host <ip-or-name> [port]"));
     Serial.println(F("[CON ] screen portalbox | pb start|stop|ssid <name>|ch <n>"));
     Serial.println(F("[CON ] pb portal [list|sync|select <name>|delete <name>]"));
     Serial.println(F("[CON ] pb clone <url> [Name.html] - save a real portal page as a portal"));
@@ -154,6 +155,9 @@ static void run(String cmd) {
   } else if (cmd.startsWith("fan host ")) {
     const String rest = cmd.substring(9); const int sp = rest.indexOf(' ');
     fanLinkConfigure((sp < 0 ? rest : rest.substring(0, sp)).c_str(), sp < 0 ? 80 : (uint16_t)rest.substring(sp + 1).toInt());
+  } else if (cmd.startsWith("bench host ")) {
+    const String rest = cmd.substring(11); const int sp = rest.indexOf(' ');
+    benchLinkConfigure((sp < 0 ? rest : rest.substring(0, sp)).c_str(), sp < 0 ? 80 : (uint16_t)rest.substring(sp + 1).toInt());
   } else {
     Serial.printf("[CON ] Unknown command \"%s\" - try help\n", cmd.c_str());
   }

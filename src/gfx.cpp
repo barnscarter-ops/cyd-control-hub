@@ -153,14 +153,11 @@ void iconGlyph(TFT_eSPI &g, int32_t cx, int32_t cy, Icon icon, uint16_t fg, uint
       stroke(g, cx, cy - 9, cx, cy - 1, fg, bg);
       break;
 
-    case Icon::Garage:
-      stroke(g, cx - 10, cy - 2, cx, cy - 9, fg, bg);
-      stroke(g, cx, cy - 9, cx + 10, cy - 2, fg, bg);
-      stroke(g, cx - 7, cy - 3, cx - 7, cy + 8, fg, bg);
-      stroke(g, cx + 7, cy - 3, cx + 7, cy + 8, fg, bg);
-      stroke(g, cx - 4, cy + 1, cx + 4, cy + 1, fg, bg, 1.5f);
-      stroke(g, cx - 4, cy + 4, cx + 4, cy + 4, fg, bg, 1.5f);
-      stroke(g, cx - 4, cy + 7, cx + 4, cy + 7, fg, bg, 1.5f);
+    case Icon::Bench:
+      // Small gauge: a bottom-swept arc, a needle toward upper-right, and a pivot dot.
+      g.drawSmoothArc(cx, cy + 4, 9, 7, 200, 340, fg, bg, true);
+      stroke(g, cx, cy + 4, cx + 6, cy - 5, fg, bg, 1.8f);
+      g.drawSpot(cx, cy + 4, 1.6f, fg, bg);
       break;
 
     case Icon::Wifi:

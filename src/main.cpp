@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 
+#include "bench_link.h"
 #include "console.h"
 #include "fan_link.h"
 #include "gfx.h"
@@ -37,6 +38,7 @@ void setup() {
   touchBegin();
   linkBegin();
   fanLinkBegin();
+  benchLinkBegin();
   pbBegin();
   uiBegin();
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
@@ -48,6 +50,7 @@ void loop() {
 
   linkLoop(now);
   fanLinkLoop(now);
+  benchLinkLoop(now);
   lanScanLoop(now);
   pbLoop(now);
 
