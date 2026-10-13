@@ -1,7 +1,9 @@
 # Bench Supply LAN API v1
 
-This client contract describes the HTTP status API exposed by the ESP32
-workstand bench-supply meter firmware (`esp32-workstand/firmware/bench-meter`).
+This client contract mirrors the authoritative sibling document at
+`../esp32-workstand/design/architecture/http-api-v1.md`, which describes the
+HTTP status API exposed by the workstand's bench-supply meter firmware
+(`esp32-workstand/firmware/bench-meter`).
 v1 is **monitor-only**: the bench-supply meter owns the INA226 readings, the
 temperature-controlled fan curve, and the fail-safe decision. The Control Hub
 only displays reported state.
