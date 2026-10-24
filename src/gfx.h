@@ -45,7 +45,7 @@ void headerRule(TFT_eSPI &g);
 void logoMark(TFT_eSPI &g, int32_t x, int32_t y);
 
 // Line icons drawn inside a 32x32 tinted badge at x,y.
-enum class Icon : uint8_t { Power, Bench, Wifi, Pulse, Back, Plus, Rotate };
+enum class Icon : uint8_t { Power, Bench, Wifi, Pulse, Back, Plus, Rotate, Home };
 void iconBadge(TFT_eSPI &g, int32_t x, int32_t y, Icon icon, uint16_t fg, uint16_t tint,
                uint16_t outside);
 void iconGlyph(TFT_eSPI &g, int32_t cx, int32_t cy, Icon icon, uint16_t fg, uint16_t bg);

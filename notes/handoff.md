@@ -71,3 +71,22 @@ One cosmetic `esp_wifi_get_mac failed with 12289` appeared during the `pb stop` 
 - None of the three saved Wi-Fi networks was in range, so the setup portal opened (`ControlHub-XXXX`). Owner to add the home network from a phone.
 - `bench host <ip> [port]` stays unset until the workstand bench meter is built and online.
 - On this laptop, run PlatformIO uploads with `PYTHONIOENCODING=utf-8 PYTHONUTF8=1`; without it the upload hangs (esptool's Unicode progress output crashes PlatformIO's echo when output is redirected). `tools/snap.py` needs Pillow, which is not installed here.
+
+## 2026-10-24 — Home Assistant added (not yet bench-tested)
+
+New `src/ha_link.*` module (async HTTP client, same transport shape as `fan_link`) talks to Home Assistant's REST API. The dashboard's second card changed from **BENCH SUPPLY** to **HOME ASST** and opens a new `Screen::Home` that lists configured entities with live state; tapping an actionable row (switch/light/fan/input_boolean/cover → toggle, script/scene → turn_on, button → press, automation → trigger) queues a service call. `bench_link` and `Screen::Bench` still compile and poll but are no longer on the dashboard.
+
+HA is VM 105 on `aiwa`, reachable at `http://192.168.1.90` on **port 80** (not 8123).
+
+Not compiled or flashed yet — the cloud session that wrote this could not reach the PlatformIO registry to build. **Bench steps:**
+
+1. Build + flash: `pio run -e cyd35 -t upload` (board on COM22; use `PYTHONIOENCODING=utf-8 PYTHONUTF8=1` on the laptop that hangs otherwise).
+2. Over serial (115200), configure:
+   - `ha host 192.168.1.90 80`
+   - `ha token <long-lived-token>`  (create in HA: profile → Security → Long-lived access tokens)
+   - `ha entity add <entity_id>` for each entity (max 6). Find exact ids in HA → Developer Tools → States. The P1S print sensors are `sensor.p1s_01p00c660302594_*`.
+   - `ha entity list` to confirm they read back with live state.
+3. On the device, open the **HOME ASST** card and confirm states render; tap a switch/light/script row and confirm `[HA  ] Action queued` then `Service call accepted`, and the state flips on the next poll.
+4. Confirm auto Wi-Fi join, the Server Fan card, and the hidden pentester gesture are all unchanged.
+
+Expected quirks to check: token rejection shows `NEEDS TOKEN`/HTTP 401; with zero entities the card reads `No entities` and the screen prompts `ha entity add <id>`; an entity with very large attributes may report "response too large" (raise `MAX_BODY_BYTES` if a real entity hits it).

@@ -7,6 +7,7 @@
 #include "gfx.h"
 #include "bench_link.h"
 #include "fan_link.h"
+#include "ha_link.h"
 #include "lan_scan.h"
 #include "portalbox.h"
 #include "theme.h"
@@ -43,6 +44,7 @@ static Screen   screen          = Screen::Dashboard;
 static uint32_t seenLinkRev     = 0;
 static uint32_t seenFanRev      = 0;
 static uint32_t seenBenchRev    = 0;
+static uint32_t seenHaRev       = 0;
 static uint32_t nextClockMs     = 0;
 static uint32_t nextStatsMs     = 0;
 static int8_t   pressedCard     = -1;
@@ -172,7 +174,7 @@ struct CardDef {
 
 static const CardDef CARDS[] = {
     {"SERVER FAN", "Rack cooling", Icon::Power, COL_LEFT_X, ROW_TOP_Y},
-    {"BENCH SUPPLY", "Workstand PSU", Icon::Bench, COL_RIGHT_X, ROW_TOP_Y},
+    {"HOME ASST", "Entities & scripts", Icon::Home, COL_RIGHT_X, ROW_TOP_Y},
     {"WIFI PENTESTER", "Audit toolkit", Icon::Wifi, COL_LEFT_X, ROW_BOT_Y},
     {"SYSTEM STATUS", "Network & devices", Icon::Pulse, COL_RIGHT_X, ROW_BOT_Y},
 };
@@ -204,17 +206,12 @@ static CardValue cardValue(size_t i) {
     }
     case 1: {
       uint16_t color = COLOR_AMBER;
-      if (benchLinkState() == BenchLinkState::Online && benchLinkMeterOk() && !benchLinkFailsafe())
-        color = COLOR_MATRIX;
-      if (benchLinkState() == BenchLinkState::Offline || benchLinkState() == BenchLinkState::Fault ||
-          benchLinkState() == BenchLinkState::Stale ||
-          (benchLinkHasSnapshot() && !benchLinkMeterOk()) ||
-          (benchLinkHasSnapshot() && benchLinkFailsafe())) color = COLOR_RED;
-      const String value = benchLinkState() == BenchLinkState::Online && benchLinkMeterOk()
-                                ? String(benchLinkVolts(), 1) + " V" : benchLinkLabel();
-      String meta = "Workstand PSU";
-      if (benchLinkHasSnapshot()) meta = String(benchLinkAmps(), 2) + " A";
-      return {value, color, meta};
+      if (haLinkState() == HaLinkState::Online) color = COLOR_MATRIX;
+      if (haLinkState() == HaLinkState::Offline || haLinkState() == HaLinkState::Fault ||
+          haLinkState() == HaLinkState::Stale) color = COLOR_RED;
+      const uint8_t n = haLinkEntityCount();
+      String meta = n ? String(n) + (n == 1 ? " entity" : " entities") : "No entities";
+      return {haLinkLabel(), color, meta};
     }
     case 2:
       if (pbActive())
@@ -331,7 +328,7 @@ static void releaseCard() {
   } else if (i == 0) {
     uiShow(Screen::Fan);
   } else if (i == 1) {
-    uiShow(Screen::Bench);
+    uiShow(Screen::Home);
   } else {
     drawCard(i);
   }
@@ -503,6 +500,102 @@ static void drawBench() {
 
 static void tapBench(uint16_t x, uint16_t y) {
   if (hitBack(x, y)) uiShow(Screen::Dashboard);
+}
+
+// ---------------------------------------------------------------------------
+// Home Assistant screen
+// ---------------------------------------------------------------------------
+static const int16_t HOME_ROW_Y0   = 104;
+static const int16_t HOME_ROW_H    = 29;
+static const int16_t HOME_ROW_STEP = 31;
+
+// Green for "live/active" states, red for unavailable, plain text otherwise.
+static uint16_t homeStateColor(const String &s) {
+  if (s == "unavailable" || s == "unknown") return COLOR_RED;
+  if (s == "on" || s == "open" || s == "home" || s == "playing" || s == "heat" || s == "cool" ||
+      s == "active" || s == "locked")
+    return COLOR_MATRIX;
+  return COLOR_TEXT;
+}
+
+static uint16_t homeStateColor() {
+  switch (haLinkState()) {
+    case HaLinkState::Online:      return COLOR_MATRIX;
+    case HaLinkState::Requesting:  return COLOR_CYAN;
+    case HaLinkState::Stale:
+    case HaLinkState::Offline:
+    case HaLinkState::Fault:       return COLOR_RED;
+    default:                       return COLOR_AMBER;
+  }
+}
+
+static void drawHome() {
+  tft.fillScreen(COLOR_BG);
+  subHeader("Home Assistant");
+  headerRule(tft);
+
+  const String endpoint = haLinkHost().length() ? haLinkHost() : "console: ha host <ip> [port]";
+  text(tft, fitText(tft, endpoint, Font::MonoSm, 260).c_str(), SCREEN_W - MARGIN, 24,
+       Font::MonoSm, COLOR_SUBTLE, COLOR_BG, MR_DATUM);
+  text(tft, haLinkLabel(), MARGIN, 70, Font::UiLg, homeStateColor(), COLOR_BG, ML_DATUM);
+
+  String activity;
+  if (haLinkRequestActive()) activity = "sending";
+  if (haLinkQueuedActions()) {
+    if (activity.length()) activity += " / ";
+    activity += String(haLinkQueuedActions()) + " queued";
+  }
+  text(tft, activity.c_str(), SCREEN_W - MARGIN, 70, Font::MonoSm, COLOR_SUBTLE, COLOR_BG, MR_DATUM);
+
+  const String err = haLinkError();
+  if (err.length())
+    text(tft, fitText(tft, err, Font::UiSm, SCREEN_W - 2 * MARGIN).c_str(), MARGIN, 92,
+         Font::UiSm, COLOR_RED, COLOR_BG, ML_DATUM);
+
+  const uint8_t n = haLinkEntityCount();
+  const int16_t rowW = SCREEN_W - 2 * MARGIN;
+  if (n == 0) {
+    const int16_t y = HOME_ROW_Y0 + 6;
+    card(tft, MARGIN, y, rowW, 64, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+    text(tft, "No entities yet.", MARGIN + 14, y + 20, Font::UiMd, COLOR_TEXT, COLOR_PANEL, ML_DATUM);
+    text(tft, "Add over serial:  ha entity add <id>", MARGIN + 14, y + 44, Font::MonoSm,
+         COLOR_SUBTLE, COLOR_PANEL, ML_DATUM);
+    return;
+  }
+
+  for (uint8_t i = 0; i < n; i++) {
+    const int16_t y = HOME_ROW_Y0 + i * HOME_ROW_STEP;
+    const bool actionable = haLinkEntityActionable(i);
+    card(tft, MARGIN, y, rowW, HOME_ROW_H, CARD_RADIUS, COLOR_PANEL, COLOR_EDGE, COLOR_BG);
+
+    const int16_t rightPad = actionable ? 30 : 14;
+    const String stateText =
+        haLinkEntityState(i) + (haLinkEntityUnit(i).length() ? " " + haLinkEntityUnit(i) : "");
+    const int16_t valW = text(tft, fitText(tft, stateText, Font::MonoMd, 150).c_str(),
+                              MARGIN + rowW - rightPad, y + HOME_ROW_H / 2, Font::MonoMd,
+                              haLinkEntityHasState(i) ? homeStateColor(haLinkEntityState(i))
+                                                      : COLOR_SUBTLE,
+                              COLOR_PANEL, MR_DATUM);
+
+    const int16_t nameMax = rowW - rightPad - valW - 28;
+    text(tft, fitText(tft, haLinkEntityName(i), Font::UiMd, nameMax).c_str(), MARGIN + 14,
+         y + HOME_ROW_H / 2, Font::UiMd, COLOR_TEXT, COLOR_PANEL, ML_DATUM);
+
+    if (actionable) chevron(tft, MARGIN + rowW - 16, y + HOME_ROW_H / 2, COLOR_CYAN, COLOR_PANEL);
+  }
+}
+
+static void tapHome(uint16_t x, uint16_t y) {
+  if (hitBack(x, y)) { uiShow(Screen::Dashboard); return; }
+  const uint8_t n = haLinkEntityCount();
+  if (!n) return;
+  for (uint8_t i = 0; i < n; i++) {
+    const int16_t ry = HOME_ROW_Y0 + i * HOME_ROW_STEP;
+    if (y >= ry && y < ry + HOME_ROW_H && x >= MARGIN && x < SCREEN_W - MARGIN) {
+      if (haLinkEntityActionable(i) && haLinkActivate(i)) drawHome();  // reflect "queued"
+      return;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -885,6 +978,7 @@ void uiShow(Screen next) {
   seenLinkRev = linkRevision();
   seenFanRev  = fanLinkRevision();
   seenBenchRev = benchLinkRevision();
+  seenHaRev   = haLinkRevision();
   seenPbRev   = pbRevision();
   lastPbLive  = pbActive();
   nextClockMs = millis() + CLOCK_REFRESH_MS;
@@ -913,6 +1007,7 @@ void uiShow(Screen next) {
       drawFan();
       break;
     case Screen::Bench: drawBench(); break;
+    case Screen::Home: drawHome(); break;
     case Screen::PortalBox: drawPb(); break;
   }
 }
@@ -930,6 +1025,7 @@ const char *uiScreenName() {
     case Screen::Setup:     return "setup";
     case Screen::Fan:       return "fan";
     case Screen::Bench:     return "bench";
+    case Screen::Home:      return "home";
     case Screen::PortalBox: return "portalbox";
   }
   return "";
@@ -944,6 +1040,7 @@ void uiTap(uint16_t x, uint16_t y) {
     case Screen::Setup:     tapSetup(x, y); break;
     case Screen::Fan:       tapFan(x, y); break;
     case Screen::Bench:     tapBench(x, y); break;
+    case Screen::Home:      tapHome(x, y); break;
     case Screen::PortalBox: tapPb(x, y); break;
   }
 }
@@ -993,6 +1090,8 @@ void uiTick(uint32_t now) {
   seenFanRev             = fanLinkRevision();
   const bool benchChanged = benchLinkRevision() != seenBenchRev;
   seenBenchRev            = benchLinkRevision();
+  const bool haChanged    = haLinkRevision() != seenHaRev;
+  seenHaRev               = haLinkRevision();
 
   // A portal that opened on its own (no network found) takes over the screen;
   // when it closes, leave the setup screen.
@@ -1014,7 +1113,7 @@ void uiTick(uint32_t now) {
   switch (screen) {
     case Screen::Dashboard: {
       if (fanChanged) drawCard(0);
-      if (benchChanged) drawCard(1);
+      if (haChanged) drawCard(1);
       if (linkChanged) {
         drawDashboardPill();
         drawCard(CARD_SYSTEM);
@@ -1067,6 +1166,7 @@ void uiTick(uint32_t now) {
     }
     case Screen::Fan: { if (fanChanged) drawFan(); break; }
     case Screen::Bench: { if (benchChanged) drawBench(); break; }
+    case Screen::Home: { if (haChanged) drawHome(); break; }
 
     case Screen::PortalBox: {
       const bool live = pbActive();

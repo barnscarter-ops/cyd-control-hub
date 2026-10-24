@@ -24,6 +24,7 @@ Single env: `cyd35`.
 - `src/gfx.*` — the global `tft`, smooth-font helpers (`text`, `fitText`), and primitives (`card`, `pill`, `button`, `signalBars`, `headerRule`, `logoMark`, `iconBadge`). Every helper takes a `TFT_eSPI&` so it draws to the panel or a sprite.
 - `src/ui.*` — screens (Dashboard, Network, Setup, Fan, PortalBox) and navigation. `uiTick()` redraws only what changed.
 - `src/portalbox.*` — PortalBox captive-portal toolkit ported from `../portalbox`: own access point, wildcard DNS, `/get` capture contract, portal library and capture CSV on microSD with a LittleFS fallback. `data/portals/` holds the pages shipped with the firmware; the device sync copies them to the card.
+- `src/ha_link.*` — async HTTP client for a Home Assistant REST API: reads a small user-chosen set of entities (`GET /api/states/<id>`, round-robin, one per poll), actuates them (`POST /api/services/<domain>/<service>`), Bearer-token auth. Host/port/token/entity-list live in NVS (namespace `halink`), never in source. Same transport shape as `fan_link`.
 - `src/wifi_link.*` — saved networks, auto-connect state machine, WiFiManager captive portal, NTP.
 - `src/lan_scan.*` — ARP sweep of the subnet to list connected devices.
 - `src/touch_input.*` — XPT2046 calibration and tap polling.
@@ -58,6 +59,14 @@ Single env: `cyd35`.
 - Time: `configTzTime` with US Central (`CST6CDT,M3.2.0,M11.1.0`) once online.
 - Radio handover: PortalBox runs its own AP, so only one access point can exist at a time. `linkSuspend()` closes the setup portal, turns the station radio off, and sets `LinkState::Suspended`; `linkOpenPortal()` refuses to open the setup portal in that state; `linkResume()` restores station mode and restarts the scan. LAN scanning and fan polling stop on their own connection checks and resume with it.
 
+## Home Assistant
+
+- `ha_link` talks to a Home Assistant instance over its REST API. Reads use `GET /api/states/<entity_id>`; tap actions use `POST /api/services/<domain>/<service>` (`switch`/`light`/`fan`/`input_boolean`/`cover` → `toggle`, `script`/`scene` → `turn_on`, `button` → `press`, `automation` → `trigger`). Everything else is display-only.
+- Auth is a long-lived access token (`Authorization: Bearer`). The token, host, port (default **8123** — set `80` if HA is reverse-proxied there), and up to `HA_MAX_ENTITIES` (6) entity ids all live in NVS namespace `halink`. No secrets in source, same rule as Wi-Fi.
+- Entities are polled round-robin, one `GET` per `POLL_INTERVAL_MS` (1200 ms), so N entities refresh every N×1.2 s. One request is in flight at a time; a queued tap action takes priority, and on success the acted entity is re-read immediately.
+- State JSON is parsed through an ArduinoJson `Filter` (only `state`, `friendly_name`, `unit_of_measurement`), so a chatty entity's attributes can't blow the `MAX_BODY_BYTES` (6 KB) buffer. An entity whose state payload still exceeds the cap is reported as an error, not silently dropped.
+- The dashboard's second card (`CARDS[1]`, `HOME ASST`) opens `Screen::Home`, which lists the configured entities with live state and a cyan chevron on each actionable row. The `bench_link` module and `Screen::Bench` still compile and poll but are no longer surfaced on the dashboard — the HA card took that slot.
+
 ## LAN scan
 
 - `lan_scan` sends ARP requests in batches of 8 every 120 ms (two passes, capped at a /24) and harvests the lwIP ARP table. lwIP calls must go through `tcpip_api_call` (core locking is off). The ARP table holds only 10 entries, so devices are collected incrementally into our own list (max 64).
@@ -70,7 +79,9 @@ Single env: `cyd35`.
 
 ## Serial console
 
-Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `pb start|stop|ssid <name>|ch <n>|clone <url> [Name.html]|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `flip`, `reboot`.
+Type `help` at 115200 baud. Commands: `status`, `snap` (RLE screen dump for `tools/snap.py`), `tap x y`, `screen dashboard|network|setup|fan|home|portalbox`, `scan`, `portal`, `close`, `wifi add <ssid> <pass>`, `wifi list` (blocking scan), `wifi forget`, `fan host <ip-or-name> [port]`, `bench host <ip-or-name> [port]`, `ha host <ip-or-name> [port]`, `ha token <token>|clear`, `ha entity add|del <id>`, `ha entity list|clear`, `pb start|stop|ssid <name>|ch <n>|clone <url> [Name.html]|portal [list|sync|select <name>|delete <name>]|capture [dump|clear]|beep on|off`, `flip`, `reboot`.
+
+The console line buffer is 256 chars so a Home Assistant long-lived token (a ~180-char JWT) can be pasted in one line. `ha token` stores the token in NVS and is never echoed back.
 
 ## Loop rules
 
