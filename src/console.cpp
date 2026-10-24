@@ -5,6 +5,7 @@
 #include "gfx.h"
 #include "bench_link.h"
 #include "fan_link.h"
+#include "ha_link.h"
 #include "lan_scan.h"
 #include "portalbox.h"
 #include "theme.h"
@@ -52,6 +53,13 @@ static void status() {
                 pbActive() ? "up" : "idle", pbBackendName(), (unsigned)pbPortalCount(),
                 pbSelectedPortal().length() ? pbSelectedPortal().c_str() : "built-in",
                 (unsigned long)pbCaptureCount(), (unsigned)pbClients());
+  Serial.printf("[CON ] ha=%s host=%s token=%s entities=%u queued=%u error=\"%s\"\n",
+                haLinkLabel(), haLinkHost().length() ? haLinkHost().c_str() : "unset",
+                haLinkHasToken() ? "set" : "unset", (unsigned)haLinkEntityCount(),
+                (unsigned)haLinkQueuedActions(), haLinkError().c_str());
+  for (uint8_t i = 0; i < haLinkEntityCount(); i++)
+    Serial.printf("[CON ]   ha %s = %s %s\n", haLinkEntityId(i).c_str(),
+                  haLinkEntityState(i).c_str(), haLinkEntityUnit(i).c_str());
   Serial.printf("[CON ] fan=%s endpoint=%s queued=%u error=\"%s\"\n", fanLinkLabel(),
                 fanLinkHost().c_str(), fanLinkQueuedControls(), fanLinkError().c_str());
   if (fanLinkHasSnapshot()) {
@@ -67,10 +75,12 @@ static void run(String cmd) {
   if (cmd.isEmpty()) return;
 
   if (cmd == "help") {
-    Serial.println(F("[CON ] status | snap | tap <x> <y> | screen <dashboard|network|setup|fan>"));
+    Serial.println(F("[CON ] status | snap | tap <x> <y> | screen <dashboard|network|setup|fan|home>"));
     Serial.println(F("[CON ] scan | portal | close | reboot | flip"));
     Serial.println(F("[CON ] wifi add <ssid> <pass> | wifi list | wifi forget"));
     Serial.println(F("[CON ] fan host <ip-or-name> [port] | bench host <ip-or-name> [port]"));
+    Serial.println(F("[CON ] ha host <ip-or-name> [port] | ha token <token>|clear"));
+    Serial.println(F("[CON ] ha entity add|del <id> | ha entity list|clear"));
     Serial.println(F("[CON ] screen portalbox | pb start|stop|ssid <name>|ch <n>"));
     Serial.println(F("[CON ] pb portal [list|sync|select <name>|delete <name>]"));
     Serial.println(F("[CON ] pb clone <url> [Name.html] - save a real portal page as a portal"));
@@ -158,6 +168,35 @@ static void run(String cmd) {
   } else if (cmd.startsWith("bench host ")) {
     const String rest = cmd.substring(11); const int sp = rest.indexOf(' ');
     benchLinkConfigure((sp < 0 ? rest : rest.substring(0, sp)).c_str(), sp < 0 ? 80 : (uint16_t)rest.substring(sp + 1).toInt());
+  } else if (cmd == "screen home") {
+    uiShow(Screen::Home);
+  } else if (cmd.startsWith("ha host ")) {
+    const String rest = cmd.substring(8); const int sp = rest.indexOf(' ');
+    haLinkConfigure((sp < 0 ? rest : rest.substring(0, sp)).c_str(),
+                    sp < 0 ? 8123 : (uint16_t)rest.substring(sp + 1).toInt());
+  } else if (cmd == "ha token clear") {
+    haLinkSetToken("");
+    Serial.println(F("[CON ] HA token cleared"));
+  } else if (cmd.startsWith("ha token ")) {
+    haLinkSetToken(cmd.substring(9).c_str());  // never echoed back
+    Serial.println(F("[CON ] HA token stored"));
+  } else if (cmd == "ha entity list") {
+    Serial.printf("[CON ] %u entit%s\n", (unsigned)haLinkEntityCount(),
+                  haLinkEntityCount() == 1 ? "y" : "ies");
+    for (uint8_t i = 0; i < haLinkEntityCount(); i++)
+      Serial.printf("[CON ]   %u: %s = %s%s%s%s\n", (unsigned)i, haLinkEntityId(i).c_str(),
+                    haLinkEntityState(i).c_str(), haLinkEntityUnit(i).length() ? " " : "",
+                    haLinkEntityUnit(i).c_str(), haLinkEntityActionable(i) ? "  [tap]" : "");
+  } else if (cmd == "ha entity clear") {
+    haLinkClearEntities();
+    Serial.println(F("[CON ] HA entities cleared"));
+  } else if (cmd.startsWith("ha entity add ")) {
+    Serial.println(haLinkAddEntity(cmd.substring(14).c_str())
+                       ? F("[CON ] entity added")
+                       : F("[CON ] could not add (list full, duplicate, or invalid id)"));
+  } else if (cmd.startsWith("ha entity del ")) {
+    Serial.println(haLinkRemoveEntity(cmd.substring(14).c_str()) ? F("[CON ] entity removed")
+                                                                 : F("[CON ] no such entity"));
   } else {
     Serial.printf("[CON ] Unknown command \"%s\" - try help\n", cmd.c_str());
   }
@@ -169,7 +208,7 @@ void consoleLoop() {
     if (c == '\n' || c == '\r') {
       run(line);
       line = "";
-    } else if (line.length() < 64) {
+    } else if (line.length() < 256) {  // HA long-lived tokens are ~180-char JWTs
       line += c;
     }
   }

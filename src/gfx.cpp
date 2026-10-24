@@ -195,6 +195,15 @@ void iconGlyph(TFT_eSPI &g, int32_t cx, int32_t cy, Icon icon, uint16_t fg, uint
       stroke(g, cx - 9, cy + 9, cx - 6, cy + 6, fg, bg);  // bottom-left (points left)
       stroke(g, cx - 6, cy + 6, cx - 9, cy + 3, fg, bg);
       break;
+
+    case Icon::Home:
+      // A house: peaked roof over square walls.
+      stroke(g, cx - 9, cy - 1, cx, cy - 9, fg, bg);  // left roof slope
+      stroke(g, cx, cy - 9, cx + 9, cy - 1, fg, bg);  // right roof slope
+      stroke(g, cx - 7, cy - 1, cx - 7, cy + 8, fg, bg);  // left wall
+      stroke(g, cx + 7, cy - 1, cx + 7, cy + 8, fg, bg);  // right wall
+      stroke(g, cx - 7, cy + 8, cx + 7, cy + 8, fg, bg);  // floor
+      break;
   }
 }
 

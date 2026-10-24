@@ -11,6 +11,7 @@
 #include "console.h"
 #include "fan_link.h"
 #include "gfx.h"
+#include "ha_link.h"
 #include "lan_scan.h"
 #include "portalbox.h"
 #include "theme.h"
@@ -39,6 +40,7 @@ void setup() {
   linkBegin();
   fanLinkBegin();
   benchLinkBegin();
+  haLinkBegin();
   pbBegin();
   uiBegin();
   digitalWrite(TFT_BL, TFT_BACKLIGHT_ON);
@@ -51,6 +53,7 @@ void loop() {
   linkLoop(now);
   fanLinkLoop(now);
   benchLinkLoop(now);
+  haLinkLoop(now);
   lanScanLoop(now);
   pbLoop(now);
 
